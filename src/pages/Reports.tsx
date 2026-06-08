@@ -17,7 +17,15 @@ import {
   CheckCircle,
   Clock,
   Loader2,
-  Info
+  Info,
+  Eye,
+  XCircle,
+  User,
+  Database,
+  BarChart2,
+  ArrowUpRight,
+  Table,
+  AlertCircle
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
@@ -34,6 +42,8 @@ export const Reports: React.FC = () => {
   const [filterScenario, setFilterScenario] = useState<string>('all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [exportFormat, setExportFormat] = useState<'pdf' | 'excel' | 'csv'>('pdf');
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedVersion, setSelectedVersion] = useState<ReportVersion | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
   const basins = Array.from(new Set(carbonSinkData.map(d => d.basin)));
@@ -530,6 +540,10 @@ export const Reports: React.FC = () => {
       const avgCarbon = filteredData.length > 0 ? totalCarbon / filteredData.length : 0;
       const basinsIncluded = Array.from(new Set(filteredData.map(d => d.basin)));
       
+      const bioPumpTotal = filteredData.reduce((sum, d) => sum + d.biologicalPump, 0);
+      const physPumpTotal = filteredData.reduce((sum, d) => sum + d.physicalPump, 0);
+      const carbPumpTotal = filteredData.reduce((sum, d) => sum + d.carbonatePump, 0);
+      
       addReportVersion({
         filters: {
           basin: filterBasin,
@@ -544,7 +558,48 @@ export const Reports: React.FC = () => {
           basins: basinsIncluded
         },
         format: 'pdf',
-        fileSize: canvas.width * canvas.height * 4
+        fileSize: canvas.width * canvas.height * 4,
+        snapshot: {
+          chartsData: {
+            carbonFlux: basins.map(basin => {
+              const basinRecords = filteredData.filter(d => d.basin === basin);
+              return {
+                name: basin,
+                value: Math.round((basinRecords.reduce((sum, d) => sum + d.totalCarbonSink, 0) / basinRecords.length || 0) * 100) / 100
+              };
+            }).sort((a, b) => b.value - a.value),
+            pumpEfficiency: {
+              biologicalPump: Math.round(bioPumpTotal * 10000) / 10000,
+              physicalPump: Math.round(physPumpTotal * 10000) / 10000,
+              carbonatePump: Math.round(carbPumpTotal * 10000) / 10000
+            },
+            scenarioComparison: scenarios.map(scenario => {
+              const scenarioRecords = filteredData.filter(d => d.scenario === scenario);
+              return {
+                name: scenario,
+                avgCarbonSink: Math.round((scenarioRecords.reduce((sum, d) => sum + d.totalCarbonSink, 0) / scenarioRecords.length || 0) * 100) / 100
+              };
+            })
+          },
+          dataPreview: filteredData.slice(0, 2).map(d => ({
+            basin: d.basin,
+            season: d.season,
+            scenario: d.scenario,
+            year: d.year,
+            totalCarbonSink: d.totalCarbonSink,
+            biologicalPump: d.biologicalPump,
+            physicalPump: d.physicalPump,
+            carbonatePump: d.carbonatePump
+          })),
+          generationParams: {
+            searchTerm,
+            filterBasin,
+            filterSeason,
+            filterScenario,
+            exportFormat: 'pdf',
+            timestamp: new Date().toISOString()
+          }
+        }
       });
       
       setNotification({ type: 'success', message: 'PDF报告生成成功，版本记录已保存' });
@@ -602,6 +657,10 @@ export const Reports: React.FC = () => {
       const avgCarbon = filteredData.length > 0 ? totalCarbon / filteredData.length : 0;
       const basinsIncluded = Array.from(new Set(filteredData.map(d => d.basin)));
       
+      const bioPumpTotal = filteredData.reduce((sum, d) => sum + d.biologicalPump, 0);
+      const physPumpTotal = filteredData.reduce((sum, d) => sum + d.physicalPump, 0);
+      const carbPumpTotal = filteredData.reduce((sum, d) => sum + d.carbonatePump, 0);
+      
       addReportVersion({
         filters: {
           basin: filterBasin,
@@ -616,7 +675,48 @@ export const Reports: React.FC = () => {
           basins: basinsIncluded
         },
         format: exportFormat as 'pdf' | 'excel' | 'csv',
-        fileSize: blob.size
+        fileSize: blob.size,
+        snapshot: {
+          chartsData: {
+            carbonFlux: basins.map(basin => {
+              const basinRecords = filteredData.filter(d => d.basin === basin);
+              return {
+                name: basin,
+                value: Math.round((basinRecords.reduce((sum, d) => sum + d.totalCarbonSink, 0) / basinRecords.length || 0) * 100) / 100
+              };
+            }).sort((a, b) => b.value - a.value),
+            pumpEfficiency: {
+              biologicalPump: Math.round(bioPumpTotal * 10000) / 10000,
+              physicalPump: Math.round(physPumpTotal * 10000) / 10000,
+              carbonatePump: Math.round(carbPumpTotal * 10000) / 10000
+            },
+            scenarioComparison: scenarios.map(scenario => {
+              const scenarioRecords = filteredData.filter(d => d.scenario === scenario);
+              return {
+                name: scenario,
+                avgCarbonSink: Math.round((scenarioRecords.reduce((sum, d) => sum + d.totalCarbonSink, 0) / scenarioRecords.length || 0) * 100) / 100
+              };
+            })
+          },
+          dataPreview: filteredData.slice(0, 2).map(d => ({
+            basin: d.basin,
+            season: d.season,
+            scenario: d.scenario,
+            year: d.year,
+            totalCarbonSink: d.totalCarbonSink,
+            biologicalPump: d.biologicalPump,
+            physicalPump: d.physicalPump,
+            carbonatePump: d.carbonatePump
+          })),
+          generationParams: {
+            searchTerm,
+            filterBasin,
+            filterSeason,
+            filterScenario,
+            exportFormat,
+            timestamp: new Date().toISOString()
+          }
+        }
       });
 
       setIsGenerating(false);
@@ -959,13 +1059,25 @@ export const Reports: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-xs font-mono text-ocean-400">
-                      {(version.fileSize / 1024 / 1024).toFixed(2)} MB
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <div className="text-xs font-mono text-ocean-400">
+                        {(version.fileSize / 1024 / 1024).toFixed(2)} MB
+                      </div>
+                      <div className="text-xs text-white/40">
+                        {version.summary.recordCount} 条记录
+                      </div>
                     </div>
-                    <div className="text-xs text-white/40">
-                      {version.summary.recordCount} 条记录
-                    </div>
+                    <button
+                      onClick={() => {
+                        setSelectedVersion(version);
+                        setShowDetailModal(true);
+                      }}
+                      className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white"
+                      title="查看详情"
+                    >
+                      <Eye size={16} />
+                    </button>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
@@ -1010,6 +1122,332 @@ export const Reports: React.FC = () => {
           )}
         </div>
       </div>
+
+      {showDetailModal && selectedVersion && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="card w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="card-header flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    selectedVersion.format === 'pdf' ? 'bg-coral-500/20 text-coral-400' : 
+                    selectedVersion.format === 'csv' ? 'bg-seaweed-500/20 text-seaweed-400' : 
+                    'bg-ocean-500/20 text-ocean-400'
+                  }`}>
+                    {selectedVersion.format === 'pdf' ? <FileText size={20} /> : 
+                     selectedVersion.format === 'csv' ? <FileSpreadsheet size={20} /> : <FileSpreadsheet size={20} />}
+                  </div>
+                  <div>
+                    <div className="font-medium text-white flex items-center gap-2">
+                      {selectedVersion.format.toUpperCase()} 报告详情
+                      <span className="px-2 py-0.5 bg-ocean-500/20 text-ocean-300 rounded text-xs">
+                        版本 #{selectedVersion.id.slice(-6)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-white/50 mt-0.5 flex items-center gap-2">
+                      <User size={10} />
+                      {selectedVersion.generatedByName}
+                      <span className="text-white/30">•</span>
+                      <Clock size={10} />
+                      {new Date(selectedVersion.generatedAt).toLocaleString('zh-CN')}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDetailModal(false);
+                    setSelectedVersion(null);
+                  }}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-3">
+                    <BarChart2 size={16} className="text-ocean-400" />
+                    <span className="text-sm font-medium text-white/80">核心指标摘要</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">总碳汇</span>
+                      <span className="text-sm font-mono font-bold text-ocean-400">
+                        {selectedVersion.summary.totalCarbonSink.toFixed(2)} Tg C yr⁻¹
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">平均碳汇</span>
+                      <span className="text-sm font-mono text-white/80">
+                        {selectedVersion.summary.avgCarbonSink.toFixed(2)} Tg C yr⁻¹
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">数据记录数</span>
+                      <span className="text-sm font-mono text-seaweed-400">
+                        {selectedVersion.summary.recordCount} 条
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">文件大小</span>
+                      <span className="text-sm font-mono text-white/80">
+                        {(selectedVersion.fileSize / 1024 / 1024).toFixed(2)} MB
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">包含海盆</span>
+                      <span className="text-sm text-white/80">
+                        {selectedVersion.summary.basins.join('、')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Filter size={16} className="text-yellow-400" />
+                    <span className="text-sm font-medium text-white/80">筛选条件</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">海盆</span>
+                      <span className="text-sm text-white/80">
+                        {selectedVersion.filters.basin === 'all' ? '全部海盆' : selectedVersion.filters.basin}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">季节</span>
+                      <span className="text-sm text-white/80">
+                        {selectedVersion.filters.season === 'all' ? '全部季节' : selectedVersion.filters.season}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">排放情景</span>
+                      <span className="text-sm text-white/80">
+                        {selectedVersion.filters.scenario === 'all' ? '全部情景' : selectedVersion.filters.scenario}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">年份</span>
+                      <span className="text-sm text-white/80">
+                        {selectedVersion.filters.year || '全部年份'}
+                      </span>
+                    </div>
+                    {selectedVersion.snapshot?.generationParams?.searchTerm && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-white/50">搜索词</span>
+                        <span className="text-sm text-white/80 font-mono">
+                          "{selectedVersion.snapshot.generationParams.searchTerm}"
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Database size={16} className="text-purple-400" />
+                    <span className="text-sm font-medium text-white/80">生成信息</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">生成时间</span>
+                      <span className="text-sm font-mono text-white/80">
+                        {new Date(selectedVersion.generatedAt).toLocaleString('zh-CN')}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">导出人ID</span>
+                      <span className="text-sm font-mono text-white/80">
+                        {selectedVersion.generatedBy}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">导出格式</span>
+                      <span className="text-sm text-white/80 uppercase">
+                        {selectedVersion.format}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-white/50">版本ID</span>
+                      <span className="text-sm font-mono text-white/60 text-right">
+                        {selectedVersion.id}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {selectedVersion.snapshot?.chartsData && (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <BarChart3 size={16} className="text-ocean-400" />
+                    <span className="text-sm font-medium text-white/80">图表数据快照</span>
+                    <span className="ml-auto text-xs text-white/40 flex items-center gap-1">
+                      <AlertCircle size={12} />
+                      此为生成时的永久快照，不随后续数据变化
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-xs text-white/40 mb-2 flex items-center gap-1">
+                        <ArrowUpRight size={10} />
+                        各海盆碳汇通量 (Tg C yr⁻¹)
+                      </div>
+                      <div className="space-y-1.5">
+                        {selectedVersion.snapshot.chartsData.carbonFlux.slice(0, 5).map((item, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <div className="w-16 text-xs text-white/60">{item.name}</div>
+                            <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-ocean-500 to-seaweed-500 rounded-full"
+                                style={{ width: `${Math.min(100, (item.value / (selectedVersion.snapshot!.chartsData!.carbonFlux[0].value || 1)) * 100)}%` }}
+                              />
+                            </div>
+                            <div className="w-14 text-xs font-mono text-ocean-400 text-right">
+                              {item.value.toFixed(1)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs text-white/40 mb-2 flex items-center gap-1">
+                        <PieChart size={10} />
+                        碳泵效率 (Pg C yr⁻¹)
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-white/60">生物泵</span>
+                            <span className="font-mono text-seaweed-400">{selectedVersion.snapshot.chartsData.pumpEfficiency.biologicalPump.toFixed(4)}</span>
+                          </div>
+                          <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-seaweed-500 rounded-full"
+                              style={{ width: '70%' }}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-white/60">物理泵</span>
+                            <span className="font-mono text-ocean-400">{selectedVersion.snapshot.chartsData.pumpEfficiency.physicalPump.toFixed(4)}</span>
+                          </div>
+                          <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-ocean-500 rounded-full"
+                              style={{ width: '55%' }}
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-white/60">碳酸盐泵</span>
+                            <span className="font-mono text-yellow-400">{selectedVersion.snapshot.chartsData.pumpEfficiency.carbonatePump.toFixed(4)}</span>
+                          </div>
+                          <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-yellow-500 rounded-full"
+                              style={{ width: '35%' }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-xs text-white/40 mb-2 flex items-center gap-1">
+                        <TrendingUp size={10} />
+                        情景对比 (平均碳汇 Tg C yr⁻¹)
+                      </div>
+                      <div className="space-y-2">
+                        {selectedVersion.snapshot.chartsData.scenarioComparison.map((item, i) => {
+                          const colors = ['#1B998B', '#3E92CC', '#F46036'];
+                          return (
+                            <div key={i} className="p-2 rounded-lg bg-white/5">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-white/60">{item.name}</span>
+                                <span className="text-sm font-mono" style={{ color: colors[i % colors.length] }}>
+                                  {item.avgCarbonSink.toFixed(1)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedVersion.snapshot?.dataPreview && (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Table size={16} className="text-seaweed-400" />
+                    <span className="text-sm font-medium text-white/80">数据预览快照</span>
+                    <span className="text-xs text-white/40">
+                      显示前 {selectedVersion.snapshot.dataPreview.length} 条记录
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-white/60 border-b border-white/10 bg-white/5">
+                          <th className="p-2 font-medium">海盆</th>
+                          <th className="p-2 font-medium">季节</th>
+                          <th className="p-2 font-medium">情景</th>
+                          <th className="p-2 font-medium">年份</th>
+                          <th className="p-2 font-medium text-right">总碳汇</th>
+                          <th className="p-2 font-medium text-right">生物泵</th>
+                          <th className="p-2 font-medium text-right">物理泵</th>
+                          <th className="p-2 font-medium text-right">碳酸盐泵</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedVersion.snapshot.dataPreview.map((d, i) => (
+                          <tr key={i} className="border-b border-white/5">
+                            <td className="p-2 text-white/80">{d.basin}</td>
+                            <td className="p-2">
+                              <span className="px-1.5 py-0.5 bg-ocean-500/10 text-ocean-300 rounded text-[10px]">{d.season}</span>
+                            </td>
+                            <td className="p-2">
+                              <span className="px-1.5 py-0.5 bg-seaweed-500/10 text-seaweed-300 rounded text-[10px]">{d.scenario}</span>
+                            </td>
+                            <td className="p-2 text-white/60 font-mono">{d.year}</td>
+                            <td className="p-2 text-right text-ocean-400 font-mono">{d.totalCarbonSink.toFixed(1)}</td>
+                            <td className="p-2 text-right text-seaweed-400 font-mono">{d.biologicalPump.toFixed(3)}</td>
+                            <td className="p-2 text-right text-coral-400 font-mono">{d.physicalPump.toFixed(3)}</td>
+                            <td className="p-2 text-right text-yellow-400 font-mono">{d.carbonatePump.toFixed(3)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="card-footer flex-shrink-0 border-t border-white/10">
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowDetailModal(false);
+                    setSelectedVersion(null);
+                  }}
+                  className="btn-secondary"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

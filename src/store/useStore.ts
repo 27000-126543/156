@@ -19,9 +19,12 @@ import {
   ParamAdjustmentLog,
   ReportVersion,
   RecoveryAssessment,
-  RetestSimulation
+  RetestSimulation,
+  BasinWorkOrder,
+  WorkOrderEvent,
+  WorkOrderRemark
 } from '../../shared/types';
-import { generateMockSimulations, generateMockAlerts, generateMockMetrics, generateMockApprovals, generateMockRecommendations, generateMockCarbonSinkData, generateMockPerformanceStats, generateMockBasinStatus, generateMockReportVersions, mockUser, getUserByEmail } from '../utils/mockData';
+import { generateMockSimulations, generateMockAlerts, generateMockMetrics, generateMockApprovals, generateMockRecommendations, generateMockCarbonSinkData, generateMockPerformanceStats, generateMockBasinStatus, generateMockReportVersions, mockUser, getUserByEmail, generateMockWorkOrders, generateMockRecoveryAssessments } from '../utils/mockData';
 
 interface AppState {
   user: User | null;
@@ -42,6 +45,7 @@ interface AppState {
   paramAdjustmentLogs: ParamAdjustmentLog[];
   reportVersions: ReportVersion[];
   recoveryAssessments: RecoveryAssessment[];
+  workOrders: BasinWorkOrder[];
   isLoading: boolean;
   notification: { type: 'success' | 'error' | 'info' | 'warning'; message: string } | null;
 
@@ -62,6 +66,10 @@ interface AppState {
   unlockBasin: (basin: string, reason: string) => void;
   addReportVersion: (version: Omit<ReportVersion, 'id' | 'generatedAt' | 'generatedBy' | 'generatedByName'>) => void;
   addRetestSimulation: (basin: string, calibrationData: { name: string; size: number }) => void;
+  addWorkOrderEvent: (basin: string, event: Omit<WorkOrderEvent, 'id' | 'timestamp'>) => void;
+  addWorkOrderRemark: (basin: string, content: string) => void;
+  updateNextPlan: (basin: string, nextPlan: string) => void;
+  updateWorkOrderStep: (basin: string, stepId: string, completed: boolean) => void;
   setNotification: (notification: { type: 'success' | 'error' | 'info' | 'warning'; message: string } | null) => void;
   loadData: () => void;
 }
@@ -85,6 +93,7 @@ export const useStore = create<AppState>((set, get) => ({
   paramAdjustmentLogs: [],
   reportVersions: [],
   recoveryAssessments: [],
+  workOrders: [],
   isLoading: false,
   notification: null,
 
@@ -125,6 +134,7 @@ export const useStore = create<AppState>((set, get) => ({
       basinStatuses: [],
       reportVersions: [],
       recoveryAssessments: [],
+      workOrders: [],
     });
   },
 
@@ -351,55 +361,11 @@ export const useStore = create<AppState>((set, get) => ({
       const performanceStats = generateMockPerformanceStats();
       const basinStatuses = generateMockBasinStatus();
       const reportVersions = generateMockReportVersions();
+      const recoveryAssessments = generateMockRecoveryAssessments();
+      const workOrders = generateMockWorkOrders();
 
       const unreadAlertCount = alerts.filter(a => !a.reviewedAt).length;
       
-      const recoveryAssessments: RecoveryAssessment[] = [
-        {
-          id: 'recovery-太平洋',
-          basin: '太平洋',
-          retestHistory: [
-            {
-              id: 'retest-太平洋-001',
-              basin: '太平洋',
-              status: 'completed',
-              nppDeviation: -22.5,
-              threshold: 20,
-              uploadedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-              completedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-              result: 'fail',
-              recommendation: '建议重新校准营养盐初始条件，检查浮游植物死亡率参数设置',
-              calibrationData: {
-                name: '太平洋_NPP校准数据_20260601.nc',
-                size: 15728640,
-                uploadedBy: '张海洋'
-              }
-            },
-            {
-              id: 'retest-太平洋-002',
-              basin: '太平洋',
-              status: 'pending',
-              nppDeviation: null,
-              threshold: 20,
-              uploadedAt: new Date(Date.now() - 3600000).toISOString(),
-              completedAt: null,
-              result: null,
-              recommendation: null,
-              calibrationData: {
-                name: '太平洋_NPP校准数据_20260608_revised.nc',
-                size: 16249856,
-                uploadedBy: '张海洋'
-              }
-            }
-          ],
-          consecutivePasses: 0,
-          requiredPasses: 2,
-          status: 'in_progress',
-          startedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-          completedAt: null
-        }
-      ];
-
       set({
         simulations,
         alerts,
@@ -412,6 +378,7 @@ export const useStore = create<AppState>((set, get) => ({
         basinStatuses,
         reportVersions,
         recoveryAssessments,
+        workOrders,
         isLoading: false
       });
     }, 500);
@@ -461,6 +428,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   addRetestSimulation: (basin: string, calibrationData: { name: string; size: number }) => {
     const user = get().user;
+    const state = get();
+    
+    const assessment = state.recoveryAssessments.find(a => a.basin === basin);
+    const preLockDeviations = assessment?.preLockDeviations || [0, -30, -55];
+    
     const newRetest: RetestSimulation = {
       id: `retest-${basin}-${Date.now()}`,
       basin,
@@ -474,7 +446,11 @@ export const useStore = create<AppState>((set, get) => ({
       calibrationData: {
         ...calibrationData,
         uploadedBy: user?.name || '未知用户'
-      }
+      },
+      preLockDeviations,
+      postRetestDeviation: null,
+      improvementPercent: null,
+      countsTowardUnlock: false
     };
 
     set(state => {
@@ -498,13 +474,26 @@ export const useStore = create<AppState>((set, get) => ({
           requiredPasses: 2,
           status: 'in_progress',
           startedAt: new Date().toISOString(),
-          completedAt: null
+          completedAt: null,
+          preLockDeviations,
+          preLockNppValues: [2.0, 1.4, 0.9]
         };
         return {
           recoveryAssessments: [...state.recoveryAssessments, newAssessment]
         };
       }
     });
+
+    get().addWorkOrderEvent(basin, {
+      type: 'calibration_uploaded',
+      title: '校准数据已上传',
+      description: `上传文件：${calibrationData.name}（${(calibrationData.size / 1024 / 1024).toFixed(1)} MB）`,
+      handledBy: user?.id,
+      handledByName: user?.name
+    });
+    get().updateWorkOrderStep(basin, 'step_calibration', true);
+    get().updateWorkOrderStep(basin, 'step_retest', false);
+
     get().setNotification({ type: 'success', message: '复测模拟已提交，等待处理...' });
 
     setTimeout(() => {
@@ -522,10 +511,16 @@ export const useStore = create<AppState>((set, get) => ({
 
     setTimeout(() => {
       const deviation = (Math.random() - 0.5) * 40;
-      const result = Math.abs(deviation) <= 20 ? 'pass' : 'fail';
+      const postRetestDeviation = Math.round(deviation * 10) / 10;
+      const result = Math.abs(postRetestDeviation) <= 20 ? 'pass' : 'fail';
       const recommendation = result === 'pass' 
         ? '复测通过，NPP偏差在允许范围内。建议继续进行下一次复测。'
         : '复测失败，NPP偏差仍超过阈值。建议检查浮游植物功能群参数或沉降速率设置。';
+
+      const lastPreLockDeviation = preLockDeviations[preLockDeviations.length - 1];
+      const improvementPercent = lastPreLockDeviation !== undefined && postRetestDeviation !== null
+        ? Math.round(((Math.abs(lastPreLockDeviation) - Math.abs(postRetestDeviation)) / Math.abs(lastPreLockDeviation)) * 100)
+        : null;
 
       set(state => {
         const assessment = state.recoveryAssessments.find(a => a.basin === basin);
@@ -535,7 +530,7 @@ export const useStore = create<AppState>((set, get) => ({
         
         const autoUnlock = newConsecutivePasses >= 2;
         
-        return {
+        const updatedState: Partial<AppState> = {
           recoveryAssessments: state.recoveryAssessments.map(a =>
             a.basin === basin ? {
               ...a,
@@ -546,15 +541,21 @@ export const useStore = create<AppState>((set, get) => ({
                 r.id === newRetest.id ? {
                   ...r,
                   status: 'completed',
-                  nppDeviation: Math.round(deviation * 10) / 10,
+                  nppDeviation: postRetestDeviation,
+                  postRetestDeviation,
+                  improvementPercent,
+                  countsTowardUnlock: result === 'pass',
                   result,
                   recommendation,
                   completedAt: new Date().toISOString()
                 } : r
               )
             } : a
-          ),
-          basinStatuses: autoUnlock ? state.basinStatuses.map(b =>
+          )
+        };
+
+        if (autoUnlock) {
+          updatedState.basinStatuses = state.basinStatuses.map(b =>
             b.basin === basin ? {
               ...b,
               isPaused: false,
@@ -564,19 +565,153 @@ export const useStore = create<AppState>((set, get) => ({
               unlockedBy: 'system',
               unlockedByName: '系统自动',
               currentHandler: null,
-              currentHandlerName: null
+              currentHandlerName: null,
+              workOrderId: null
             } : b
-          ) : state.basinStatuses
-        };
+          );
+
+          updatedState.workOrders = state.workOrders.map(wo =>
+            wo.basin === basin ? {
+              ...wo,
+              status: 'resolved',
+              resolvedAt: new Date().toISOString(),
+              steps: wo.steps.map(s => ({ ...s, completed: true, completedAt: new Date().toISOString() }))
+            } : wo
+          );
+
+          get().addWorkOrderEvent(basin, {
+            type: 'auto_unlocked',
+            title: '海盆已自动解锁',
+            description: '连续两次复测通过，系统自动解除海盆锁定',
+            handledBy: 'system',
+            handledByName: '系统自动'
+          });
+        }
+
+        return updatedState;
       });
 
-      const finalDeviation = (Math.random() - 0.5) * 40;
-      const finalResult = Math.abs(finalDeviation) <= 20 ? 'pass' : 'fail';
-      if (finalResult === 'pass') {
-        get().setNotification({ type: 'success', message: `复测完成！NPP偏差${Math.abs(finalDeviation).toFixed(1)}%，${finalResult === 'pass' ? '通过' : '未通过'}。${result === 'pass' ? '已满足解锁条件。' : ''}` });
+      get().addWorkOrderEvent(basin, {
+        type: 'retest_completed',
+        title: '复测模拟完成',
+        description: `NPP偏差：${Math.abs(postRetestDeviation).toFixed(1)}%，${result === 'pass' ? '通过' : '未通过'}`,
+        handledBy: user?.id,
+        handledByName: user?.name,
+        metadata: {
+          deviation: postRetestDeviation,
+          result,
+          improvementPercent
+        }
+      });
+
+      if (result === 'pass') {
+        get().setNotification({ 
+          type: 'success', 
+          message: `复测通过！NPP偏差${Math.abs(postRetestDeviation).toFixed(1)}%，改善幅度${improvementPercent ? improvementPercent + '%' : '计算中'}。` 
+        });
       } else {
-        get().setNotification({ type: 'warning', message: `复测完成！NPP偏差${Math.abs(finalDeviation).toFixed(1)}%，未通过。请参考建议调整参数后重新上传。` });
+        get().setNotification({ 
+          type: 'warning', 
+          message: `复测未通过。NPP偏差${Math.abs(postRetestDeviation).toFixed(1)}%，改善幅度${improvementPercent ? improvementPercent + '%' : '无'}。请参考建议调整参数后重新上传。` 
+        });
       }
     }, 4000);
-  }
+  },
+
+  addWorkOrderEvent: (basin: string, event: Omit<WorkOrderEvent, 'id' | 'timestamp'>) => {
+    const user = get().user;
+    const newEvent: WorkOrderEvent = {
+      ...event,
+      id: `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString(),
+      handledBy: event.handledBy || user?.id,
+      handledByName: event.handledByName || user?.name
+    };
+
+    set(state => ({
+      workOrders: state.workOrders.map(wo =>
+        wo.basin === basin ? {
+          ...wo,
+          events: [...wo.events, newEvent]
+        } : wo
+      )
+    }));
+  },
+
+  addWorkOrderRemark: (basin: string, content: string) => {
+    const user = get().user;
+    const newRemark: WorkOrderRemark = {
+      id: `remark-${Date.now()}`,
+      content,
+      createdAt: new Date().toISOString(),
+      createdBy: user?.id || 'unknown',
+      createdByName: user?.name || '未知用户'
+    };
+
+    set(state => ({
+      workOrders: state.workOrders.map(wo =>
+        wo.basin === basin ? {
+          ...wo,
+          remarks: [...wo.remarks, newRemark]
+        } : wo
+      )
+    }));
+
+    get().addWorkOrderEvent(basin, {
+      type: 'remark_added',
+      title: '处理人补充备注',
+      description: content.length > 50 ? content.substring(0, 50) + '...' : content,
+      handledBy: user?.id,
+      handledByName: user?.name
+    });
+
+    get().setNotification({ type: 'success', message: '备注已添加' });
+  },
+
+  updateNextPlan: (basin: string, nextPlan: string) => {
+    const user = get().user;
+    const now = new Date().toISOString();
+
+    set(state => ({
+      workOrders: state.workOrders.map(wo =>
+        wo.basin === basin ? {
+          ...wo,
+          nextPlan,
+          nextPlanUpdatedAt: now,
+          nextPlanUpdatedBy: user?.id || null,
+          nextPlanUpdatedByName: user?.name || null
+        } : wo
+      )
+    }));
+
+    get().addWorkOrderEvent(basin, {
+      type: 'next_plan_set',
+      title: '下一步计划已更新',
+      description: nextPlan.length > 50 ? nextPlan.substring(0, 50) + '...' : nextPlan,
+      handledBy: user?.id,
+      handledByName: user?.name
+    });
+
+    get().setNotification({ type: 'success', message: '下一步计划已更新' });
+  },
+
+  updateWorkOrderStep: (basin: string, stepId: string, completed: boolean) => {
+    set(state => ({
+      workOrders: state.workOrders.map(wo =>
+        wo.basin === basin ? {
+          ...wo,
+          steps: wo.steps.map(s =>
+            s.id === stepId ? {
+              ...s,
+              completed,
+              completedAt: completed ? new Date().toISOString() : null
+            } : s
+          ),
+          currentStep: completed 
+            ? Math.min(wo.currentStep + 1, wo.steps.length - 1)
+            : wo.currentStep
+        } : wo
+      )
+    }));
+  },
 }));

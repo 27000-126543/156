@@ -20,19 +20,31 @@ import {
   BarChart3,
   History,
   RefreshCw,
-  Loader2
+  Loader2,
+  Eye,
+  Plus,
+  Target,
+  Timer,
+  Edit3,
+  Send,
+  ArrowRight,
+  AlertCircle
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { BasinStatus, UserRole, RecoveryAssessment, RetestSimulation } from '../../shared/types';
+import { BasinStatus, UserRole, RecoveryAssessment, RetestSimulation, BasinWorkOrder, WorkOrderEvent } from '../../shared/types';
 
 export const BasinGovernance: React.FC = () => {
-  const { basinStatuses, user, unlockBasin, recoveryAssessments, addRetestSimulation, setNotification } = useStore();
+  const { basinStatuses, user, unlockBasin, recoveryAssessments, addRetestSimulation, setNotification, workOrders, addWorkOrderRemark, updateNextPlan } = useStore();
   const [selectedBasin, setSelectedBasin] = useState<string | null>(null);
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockReason, setUnlockReason] = useState('');
   const [expandedBasin, setExpandedBasin] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [showWorkOrderModal, setShowWorkOrderModal] = useState(false);
+  const [newRemark, setNewRemark] = useState('');
+  const [editNextPlan, setEditNextPlan] = useState(false);
+  const [nextPlanText, setNextPlanText] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const lockedBasins = basinStatuses.filter(b => b.isPaused);
@@ -114,6 +126,68 @@ export const BasinGovernance: React.FC = () => {
     if (result === 'pass') return <span className="px-2 py-0.5 bg-seaweed-500/20 text-seaweed-300 rounded text-xs flex items-center gap-1"><CheckCircle size={12} /> 通过</span>;
     if (result === 'fail') return <span className="px-2 py-0.5 bg-coral-500/20 text-coral-300 rounded text-xs flex items-center gap-1"><XCircle size={12} /> 未通过</span>;
     return <span className="px-2 py-0.5 bg-white/5 text-white/50 rounded text-xs">-</span>;
+  };
+
+  const getWorkOrder = (basin: string): BasinWorkOrder | undefined => {
+    return workOrders.find(w => w.basin === basin);
+  };
+
+  const getEventIcon = (type: WorkOrderEvent['type']) => {
+    switch (type) {
+      case 'lock_triggered': return <Lock size={14} className="text-coral-400" />;
+      case 'notification_sent': return <AlertTriangle size={14} className="text-yellow-400" />;
+      case 'handler_assigned': return <User size={14} className="text-ocean-400" />;
+      case 'calibration_uploaded': return <Upload size={14} className="text-blue-400" />;
+      case 'retest_started': return <Play size={14} className="text-purple-400" />;
+      case 'retest_completed': return <CheckCircle size={14} className="text-seaweed-400" />;
+      case 'expert_opinion': return <MessageSquare size={14} className="text-indigo-400" />;
+      case 'remark_added': return <Edit3 size={14} className="text-gray-400" />;
+      case 'next_plan_set': return <Target size={14} className="text-yellow-400" />;
+      case 'auto_unlocked': return <Unlock size={14} className="text-seaweed-400" />;
+      case 'manual_unlocked': return <Unlock size={14} className="text-seaweed-400" />;
+      default: return <Clock size={14} className="text-white/50" />;
+    }
+  };
+
+  const getStepStatus = (step: { completed: boolean }, index: number, currentStep: number) => {
+    if (step.completed) return 'completed';
+    if (index === currentStep) return 'current';
+    return 'pending';
+  };
+
+  const handleAddRemark = (basin: string) => {
+    if (!newRemark.trim()) {
+      setNotification({ type: 'error', message: '请输入备注内容' });
+      return;
+    }
+    addWorkOrderRemark(basin, newRemark.trim());
+    setNewRemark('');
+  };
+
+  const handleSaveNextPlan = (basin: string) => {
+    if (!nextPlanText.trim()) {
+      setNotification({ type: 'error', message: '请输入下一步计划' });
+      return;
+    }
+    updateNextPlan(basin, nextPlanText.trim());
+    setEditNextPlan(false);
+  };
+
+  const openWorkOrderModal = (basin: string) => {
+    setSelectedBasin(basin);
+    const wo = getWorkOrder(basin);
+    if (wo?.nextPlan) {
+      setNextPlanText(wo.nextPlan);
+    }
+    setShowWorkOrderModal(true);
+  };
+
+  const closeWorkOrderModal = () => {
+    setShowWorkOrderModal(false);
+    setSelectedBasin(null);
+    setNewRemark('');
+    setEditNextPlan(false);
+    setNextPlanText('');
   };
 
   return (
@@ -362,6 +436,18 @@ export const BasinGovernance: React.FC = () => {
                       <Upload size={16} />
                       上传校准数据
                     </button>
+                    {getWorkOrder(basin.basin) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openWorkOrderModal(basin.basin);
+                        }}
+                        className="btn-secondary flex items-center gap-2"
+                      >
+                        <Eye size={16} />
+                        查看工单详情
+                      </button>
+                    )}
                     {isChiefScientist && (
                       <button
                         onClick={(e) => {
@@ -393,9 +479,15 @@ export const BasinGovernance: React.FC = () => {
                         <div key={retest.id} className="p-4 rounded-xl bg-white/5 border border-white/10">
                           <div className="flex items-start justify-between mb-3">
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 {getStatusBadge(retest.status)}
                                 {getResultBadge(retest.result)}
+                                {retest.countsTowardUnlock && (
+                                  <span className="px-2 py-0.5 bg-seaweed-500/10 text-seaweed-300 rounded text-xs flex items-center gap-1">
+                                    <CheckCircle size={10} />
+                                    计入解锁计数
+                                  </span>
+                                )}
                               </div>
                               <div className="text-xs text-white/50 mt-2">
                                 上传时间: {formatDate(retest.uploadedAt)}
@@ -413,13 +505,33 @@ export const BasinGovernance: React.FC = () => {
                           </div>
                           
                           {retest.nppDeviation !== null && (
-                            <div className="grid grid-cols-2 gap-4 mb-3">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                              {retest.preLockDeviations && (
+                                <div className="p-3 rounded-lg bg-coral-500/10 border border-coral-500/20">
+                                  <div className="text-xs text-white/40 mb-1">锁定前连续偏差</div>
+                                  <div className="flex gap-1 flex-wrap">
+                                    {retest.preLockDeviations.map((d, i) => (
+                                      <span key={i} className={`text-xs font-mono font-bold ${getDeviationColor(d)}`}>
+                                        {d > 0 ? '+' : ''}{d.toFixed(1)}%
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               <div className="p-3 rounded-lg bg-white/5">
                                 <div className="text-xs text-white/40 mb-1">复测NPP偏差</div>
                                 <div className={`text-xl font-mono font-bold ${getDeviationColor(retest.nppDeviation)}`}>
                                   {retest.nppDeviation > 0 ? '+' : ''}{retest.nppDeviation.toFixed(1)}%
                                 </div>
                               </div>
+                              {retest.improvementPercent !== null && (
+                                <div className="p-3 rounded-lg bg-seaweed-500/10 border border-seaweed-500/20">
+                                  <div className="text-xs text-white/40 mb-1">改善幅度</div>
+                                  <div className={`text-xl font-mono font-bold ${retest.improvementPercent > 0 ? 'text-seaweed-400' : 'text-coral-400'}`}>
+                                    {retest.improvementPercent > 0 ? '+' : ''}{retest.improvementPercent}%
+                                  </div>
+                                </div>
+                              )}
                               <div className="p-3 rounded-lg bg-white/5">
                                 <div className="text-xs text-white/40 mb-1">允许阈值</div>
                                 <div className="text-xl font-mono font-bold text-white/80">
@@ -561,6 +673,272 @@ export const BasinGovernance: React.FC = () => {
                   <Play size={16} />
                   发起复测
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWorkOrderModal && selectedBasin && getWorkOrder(selectedBasin) && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="card w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="card-header flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-ocean-500/20 flex items-center justify-center">
+                    <Shield size={20} className="text-ocean-400" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-white flex items-center gap-2">
+                      {selectedBasin} 处置工单
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        getWorkOrder(selectedBasin)!.status === 'open' ? 'bg-coral-500/20 text-coral-300' :
+                        getWorkOrder(selectedBasin)!.status === 'in_progress' ? 'bg-yellow-500/20 text-yellow-300' :
+                        getWorkOrder(selectedBasin)!.status === 'resolved' ? 'bg-seaweed-500/20 text-seaweed-300' :
+                        'bg-white/10 text-white/60'
+                      }`}>
+                        {getWorkOrder(selectedBasin)!.status === 'open' ? '待处理' :
+                         getWorkOrder(selectedBasin)!.status === 'in_progress' ? '处理中' :
+                         getWorkOrder(selectedBasin)!.status === 'resolved' ? '已解决' : '已关闭'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-white/50 mt-0.5">
+                      创建于 {formatDate(getWorkOrder(selectedBasin)!.createdAt)}
+                      {getWorkOrder(selectedBasin)!.resolvedAt && ` · 解决于 ${formatDate(getWorkOrder(selectedBasin)!.resolvedAt)}`}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={closeWorkOrderModal}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-white/80 flex items-center gap-2 mb-3">
+                      <Timer size={14} className="text-ocean-400" />
+                      处理步骤进度
+                    </h3>
+                    <div className="space-y-2">
+                      {getWorkOrder(selectedBasin)!.steps.map((step, index) => {
+                        const status = getStepStatus(step, index, getWorkOrder(selectedBasin)!.currentStep);
+                        return (
+                          <div key={step.id} className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              status === 'completed' ? 'bg-seaweed-500/20 text-seaweed-400' :
+                              status === 'current' ? 'bg-ocean-500/20 text-ocean-400 ring-2 ring-ocean-500/30 ring-offset-2 ring-offset-bg-dark' :
+                              'bg-white/5 text-white/30'
+                            }`}>
+                              {status === 'completed' ? <CheckCircle size={16} /> :
+                               status === 'current' ? <Loader2 size={16} className="animate-spin" /> :
+                               <span className="text-xs font-mono">{index + 1}</span>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-sm font-medium ${
+                                status === 'completed' ? 'text-seaweed-300' :
+                                status === 'current' ? 'text-white' :
+                                'text-white/40'
+                              }`}>
+                                {step.title}
+                              </div>
+                              {step.completedAt && (
+                                <div className="text-xs text-white/40 mt-0.5">
+                                  完成于 {formatDate(step.completedAt)}
+                                </div>
+                              )}
+                            </div>
+                            {status === 'current' && (
+                              <span className="px-2 py-0.5 bg-ocean-500/20 text-ocean-300 rounded text-xs animate-pulse">
+                                当前步骤
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-medium text-white/80 flex items-center gap-2 mb-3">
+                      <Target size={14} className="text-yellow-400" />
+                      下一步计划
+                    </h3>
+                    {editNextPlan ? (
+                      <div className="space-y-3">
+                        <textarea
+                          value={nextPlanText}
+                          onChange={(e) => setNextPlanText(e.target.value)}
+                          placeholder="请输入下一步计划..."
+                          className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 text-sm focus:border-ocean-500/50 resize-none h-24"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleSaveNextPlan(selectedBasin)}
+                            className="btn-primary text-sm px-3 py-1.5"
+                          >
+                            保存
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditNextPlan(false);
+                              const wo = getWorkOrder(selectedBasin);
+                              if (wo?.nextPlan) setNextPlanText(wo.nextPlan);
+                            }}
+                            className="btn-secondary text-sm px-3 py-1.5"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1">
+                            {getWorkOrder(selectedBasin)!.nextPlan ? (
+                              <div>
+                                <div className="text-sm text-yellow-200/90">{getWorkOrder(selectedBasin)!.nextPlan}</div>
+                                {getWorkOrder(selectedBasin)!.nextPlanUpdatedAt && (
+                                  <div className="text-xs text-yellow-200/50 mt-2">
+                                    更新于 {formatDate(getWorkOrder(selectedBasin)!.nextPlanUpdatedAt)} 
+                                    {getWorkOrder(selectedBasin)!.nextPlanUpdatedByName && ` · ${getWorkOrder(selectedBasin)!.nextPlanUpdatedByName}`}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-yellow-200/50">暂无下一步计划，点击编辑添加</div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setEditNextPlan(true);
+                              const wo = getWorkOrder(selectedBasin);
+                              if (wo?.nextPlan) setNextPlanText(wo.nextPlan);
+                            }}
+                            className="p-1.5 hover:bg-white/10 rounded transition-colors text-yellow-200/70 hover:text-yellow-200 flex-shrink-0"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium text-white/80 flex items-center gap-2 mb-3">
+                    <Clock size={14} className="text-purple-400" />
+                    事件时间线
+                  </h3>
+                  <div className="relative pl-6 space-y-4">
+                    <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-gradient-to-b from-ocean-500/30 via-purple-500/30 to-seaweed-500/30" />
+                    {[...getWorkOrder(selectedBasin)!.events].reverse().map((event) => (
+                      <div key={event.id} className="relative">
+                        <div className="absolute -left-6 w-4 h-4 rounded-full bg-bg-dark border-2 border-current flex items-center justify-center" style={{ color: event.type.includes('lock') ? '#f87171' : event.type.includes('unlock') ? '#4ade80' : '#60a5fa' }}>
+                          <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                        </div>
+                        <div className="p-3 rounded-lg bg-white/5 border border-white/10 hover:bg-white/8 transition-colors">
+                          <div className="flex items-start gap-2">
+                            <div className="flex-shrink-0 mt-0.5">{getEventIcon(event.type)}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium text-white">{event.title}</span>
+                                {event.handledByName && (
+                                  <span className="text-xs text-white/50 flex items-center gap-1">
+                                    <User size={10} />
+                                    {event.handledByName}
+                                  </span>
+                                )}
+                              </div>
+                              {event.description && (
+                                <div className="text-sm text-white/60 mt-1">{event.description}</div>
+                              )}
+                              {event.metadata && Object.keys(event.metadata).length > 0 && (
+                                <div className="mt-2 p-2 rounded bg-white/5 text-xs text-white/50 space-y-1">
+                                  {Object.entries(event.metadata).map(([key, value]) => (
+                                    <div key={key} className="flex gap-2">
+                                      <span className="text-white/40">{key}:</span>
+                                      <span className="text-white/70 font-mono">{String(value)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="text-xs text-white/40 mt-2 flex items-center gap-1">
+                                <Clock size={10} />
+                                {formatDate(event.timestamp)}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-medium text-white/80 flex items-center gap-2 mb-3">
+                  <MessageSquare size={14} className="text-blue-400" />
+                  处理人备注
+                  <span className="ml-auto text-xs font-normal text-white/50">
+                    {getWorkOrder(selectedBasin)!.remarks.length} 条备注
+                  </span>
+                </h3>
+                
+                <div className="space-y-3 mb-4">
+                  {getWorkOrder(selectedBasin)!.remarks.length === 0 ? (
+                    <div className="p-8 rounded-lg bg-white/5 border border-white/10 text-center">
+                      <MessageSquare size={32} className="mx-auto mb-2 text-white/20" />
+                      <p className="text-sm text-white/40">暂无备注，添加第一条备注吧</p>
+                    </div>
+                  ) : (
+                    [...getWorkOrder(selectedBasin)!.remarks].reverse().map((remark) => (
+                      <div key={remark.id} className="p-3 rounded-lg bg-white/5 border border-white/10">
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+                            <User size={14} className="text-blue-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-white">{remark.createdByName}</span>
+                              <span className="text-xs text-white/40">{formatDate(remark.createdAt)}</span>
+                            </div>
+                            <div className="text-sm text-white/70 mt-1 whitespace-pre-wrap">{remark.content}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={newRemark}
+                    onChange={(e) => setNewRemark(e.target.value)}
+                    placeholder="添加备注..."
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAddRemark(selectedBasin);
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 text-sm focus:border-ocean-500/50"
+                  />
+                  <button
+                    onClick={() => handleAddRemark(selectedBasin)}
+                    disabled={!newRemark.trim()}
+                    className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Send size={16} />
+                    发送
+                  </button>
+                </div>
               </div>
             </div>
           </div>

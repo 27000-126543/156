@@ -518,7 +518,19 @@ export function generateMockReportVersions(): ReportVersion[] {
       filters: { basin: 'all', season: 'all', scenario: 'all', year: null },
       summary: { totalCarbonSink: 12580, avgCarbonSink: 29.95, recordCount: 420, basins: ['太平洋', '大西洋', '印度洋', '北冰洋', '南大洋', '地中海', '加勒比海'] },
       format: 'pdf',
-      fileSize: 2457600
+      fileSize: 2457600,
+      snapshot: {
+        chartsData: {
+          carbonFlux: { pacific: 4280, atlantic: 3120, indian: 2450, arctic: 890, southern: 1250, mediterranean: 320, caribbean: 270 },
+          pumpEfficiency: { biological: 72, physical: 65, carbonate: 42 },
+          scenarioComparison: { ssp126: [120, 125, 130, 135, 140], ssp245: [115, 118, 120, 122, 125], ssp585: [110, 105, 100, 95, 90] }
+        },
+        dataPreview: [
+          { basin: '太平洋', season: '春季', scenario: 'SSP2-4.5', year: 2024, totalCarbonSink: 456.2, biologicalPump: 0.273, physicalPump: 0.137, carbonatePump: 0.046 },
+          { basin: '太平洋', season: '夏季', scenario: 'SSP2-4.5', year: 2024, totalCarbonSink: 512.8, biologicalPump: 0.308, physicalPump: 0.154, carbonatePump: 0.051 }
+        ],
+        generationParams: { includeCharts: true, includeTables: true, includeMethodology: false, chartTypes: ['carbonFlux', 'pumpEfficiency', 'scenarioComparison', 'biomassDistribution', 'omzEvolution'] }
+      }
     },
     {
       id: 'report-002',
@@ -528,7 +540,19 @@ export function generateMockReportVersions(): ReportVersion[] {
       filters: { basin: '太平洋', season: 'all', scenario: 'SSP2-4.5', year: null },
       summary: { totalCarbonSink: 4280, avgCarbonSink: 71.33, recordCount: 60, basins: ['太平洋'] },
       format: 'pdf',
-      fileSize: 1835008
+      fileSize: 1835008,
+      snapshot: {
+        chartsData: {
+          carbonFlux: { pacific: 4280 },
+          pumpEfficiency: { biological: 75, physical: 68, carbonate: 45 },
+          scenarioComparison: { ssp245: [70, 71, 72, 71, 73] }
+        },
+        dataPreview: [
+          { basin: '太平洋', season: '春季', scenario: 'SSP2-4.5', year: 2020, totalCarbonSink: 428.5, biologicalPump: 0.257, physicalPump: 0.129, carbonatePump: 0.043 },
+          { basin: '太平洋', season: '夏季', scenario: 'SSP2-4.5', year: 2020, totalCarbonSink: 485.2, biologicalPump: 0.291, physicalPump: 0.146, carbonatePump: 0.049 }
+        ],
+        generationParams: { includeCharts: true, includeTables: true, includeMethodology: true, chartTypes: ['carbonFlux', 'pumpEfficiency', 'scenarioComparison'] }
+      }
     },
     {
       id: 'report-003',
@@ -538,7 +562,8 @@ export function generateMockReportVersions(): ReportVersion[] {
       filters: { basin: 'all', season: '夏季', scenario: 'all', year: null },
       summary: { totalCarbonSink: 3850, avgCarbonSink: 36.67, recordCount: 105, basins: ['太平洋', '大西洋', '印度洋', '北冰洋', '南大洋', '地中海', '加勒比海'] },
       format: 'csv',
-      fileSize: 153600
+      fileSize: 153600,
+      snapshot: null
     }
   ];
 }

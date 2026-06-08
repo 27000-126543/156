@@ -206,14 +206,17 @@ export interface BasinStatus {
   workOrderId: string | null;
 }
 
-export type WorkOrderEventType = 
-  | 'lock_triggered' 
-  | 'notification_sent' 
-  | 'handler_assigned' 
-  | 'calibration_uploaded' 
-  | 'retest_started' 
-  | 'retest_completed' 
-  | 'expert_opinion' 
+export type WorkOrderEventType =
+  | 'lock_triggered'
+  | 'notification_sent'
+  | 'handler_assigned'
+  | 'calibration_uploaded'
+  | 'retest_started'
+  | 'retest_running'
+  | 'retest_completed'
+  | 'retest_failed'
+  | 'expert_opinion'
+  | 'handler_reassigned'
   | 'remark_added'
   | 'next_plan_set'
   | 'auto_unlocked' 
@@ -227,6 +230,7 @@ export interface WorkOrderEvent {
   timestamp: string;
   handledBy: string | null;
   handledByName: string | null;
+  phase?: 'lock' | 'notification' | 'calibration' | 'retest' | 'expert' | 'unlock';
   metadata?: Record<string, any>;
 }
 
@@ -236,6 +240,19 @@ export interface WorkOrderRemark {
   createdAt: string;
   createdBy: string;
   createdByName: string;
+  phase?: 'lock' | 'notification' | 'calibration' | 'retest' | 'expert' | 'unlock';
+}
+
+export interface HandlerReassignment {
+  id: string;
+  fromHandler: string;
+  fromHandlerName: string;
+  toHandler: string;
+  toHandlerName: string;
+  reason: string;
+  reassignedAt: string;
+  reassignedBy: string;
+  reassignedByName: string;
 }
 
 export interface BasinWorkOrder {
@@ -243,7 +260,15 @@ export interface BasinWorkOrder {
   basin: string;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   currentStep: number;
-  steps: { id: string; title: string; completed: boolean; completedAt: string | null }[];
+  steps: { 
+    id: string; 
+    title: string; 
+    completed: boolean; 
+    completedAt: string | null;
+    deadline: string | null;
+    handler: string | null;
+    handlerName: string | null;
+  }[];
   events: WorkOrderEvent[];
   remarks: WorkOrderRemark[];
   nextPlan: string | null;
@@ -254,6 +279,10 @@ export interface BasinWorkOrder {
   preLockNppValues: number[];
   createdAt: string;
   resolvedAt: string | null;
+  currentHandler: string | null;
+  currentHandlerName: string | null;
+  overdue: boolean;
+  reassignmentHistory: HandlerReassignment[];
 }
 
 export interface RetestSimulation {
