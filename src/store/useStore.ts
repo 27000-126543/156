@@ -15,7 +15,8 @@ import {
   SimulationStatus,
   AlertLevel,
   UserRole,
-  ApprovalStatus
+  ApprovalStatus,
+  ParamAdjustmentLog
 } from '../../shared/types';
 import { generateMockSimulations, generateMockAlerts, generateMockMetrics, generateMockApprovals, generateMockRecommendations, generateMockCarbonSinkData, generateMockPerformanceStats, generateMockBasinStatus, mockUser } from '../utils/mockData';
 
@@ -35,6 +36,7 @@ interface AppState {
   performanceStats: PerformanceStats[];
   uploadedFiles: UploadedFile[];
   basinStatuses: BasinStatus[];
+  paramAdjustmentLogs: ParamAdjustmentLog[];
   isLoading: boolean;
   notification: { type: 'success' | 'error' | 'info'; message: string } | null;
 
@@ -51,6 +53,7 @@ interface AppState {
   reviewAlert: (alertId: string, comment: string, approved: boolean, adjustments?: Partial<BiologicalParams>) => void;
   processApproval: (approvalId: string, approved: boolean, comments: string) => void;
   adoptRecommendation: (recId: string) => void;
+  addParamAdjustmentLog: (log: Omit<ParamAdjustmentLog, 'id' | 'createdAt' | 'createdBy'>) => void;
   setNotification: (notification: { type: 'success' | 'error' | 'info'; message: string } | null) => void;
   loadData: () => void;
 }
@@ -71,6 +74,7 @@ export const useStore = create<AppState>((set, get) => ({
   performanceStats: [],
   uploadedFiles: [],
   basinStatuses: [],
+  paramAdjustmentLogs: [],
   isLoading: false,
   notification: null,
 
@@ -136,6 +140,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   createSimulation: (name: string, description: string, oceanBasin: string, season: string, scenario: string, params: BiologicalParams) => {
+    const basin = get().basinStatuses.find(b => b.basin === oceanBasin);
+    if (basin?.isPaused) {
+      get().setNotification({ type: 'error', message: `${oceanBasin}区域已被暂停，无法创建新的模拟任务。该海盆连续三次NPP偏差超过20%，已自动锁定。请联系首席科学家排查。` });
+      return;
+    }
+
     const newSim: Simulation = {
       id: `sim-${Date.now()}`,
       name,
@@ -189,6 +199,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   reviewAlert: (alertId: string, comment: string, approved: boolean, adjustments?: Partial<BiologicalParams>) => {
+    const alert = get().alerts.find(a => a.id === alertId);
+    const simulation = alert ? get().simulations.find(s => s.id === alert.simulationId) : null;
+
     set(state => ({
       alerts: state.alerts.map(a =>
         a.id === alertId
@@ -205,18 +218,46 @@ export const useStore = create<AppState>((set, get) => ({
       unreadAlertCount: Math.max(0, state.unreadAlertCount - 1)
     }));
 
-    if (approved && adjustments) {
-      const alert = get().alerts.find(a => a.id === alertId);
-      if (alert) {
-        get().updateSimulationStatus(alert.simulationId, SimulationStatus.BIOGEOCHEMICAL_ITERATION, 50);
-        setTimeout(() => {
-          get().updateSimulationStatus(alert.simulationId, SimulationStatus.COMPLETED, 100);
-          get().setNotification({ type: 'success', message: '参数已调整，重新模拟完成' });
-        }, 5000);
-      }
+    if (approved && adjustments && simulation) {
+      const oldParams = { ...simulation.params };
+      const newParams = { ...oldParams, ...adjustments };
+
+      get().addParamAdjustmentLog({
+        simulationId: simulation.id,
+        alertId,
+        oldParams,
+        newParams,
+        reason: comment
+      });
+
+      set(state => ({
+        simulations: state.simulations.map(s =>
+          s.id === simulation.id
+            ? { ...s, params: newParams, updatedAt: new Date().toISOString() }
+            : s
+        )
+      }));
+
+      get().updateSimulationStatus(simulation.id, SimulationStatus.BIOGEOCHEMICAL_ITERATION, 50);
+      setTimeout(() => {
+        get().updateSimulationStatus(simulation.id, SimulationStatus.COMPLETED, 100);
+        get().setNotification({ type: 'success', message: '参数已调整，重新模拟完成' });
+      }, 5000);
     }
     
     get().setNotification({ type: 'success', message: '预警复核已提交' });
+  },
+
+  addParamAdjustmentLog: (log) => {
+    const newLog: ParamAdjustmentLog = {
+      ...log,
+      id: `log-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      createdBy: get().user?.id || '',
+    };
+    set(state => ({
+      paramAdjustmentLogs: [newLog, ...state.paramAdjustmentLogs]
+    }));
   },
 
   processApproval: (approvalId: string, approved: boolean, comments: string) => {
@@ -239,9 +280,26 @@ export const useStore = create<AppState>((set, get) => ({
     }));
 
     if (approved) {
-      get().setNotification({ type: 'success', message: '审批已通过，结果将推送至IPCC和工程组' });
+      if (approval.level === 1) {
+        const level2Approval: Approval = {
+          id: `approval-${Date.now()}`,
+          simulationId: approval.simulationId,
+          simulationName: approval.simulationName,
+          level: 2,
+          status: ApprovalStatus.PENDING,
+          reviewer: null,
+          reviewerName: null,
+          comments: '',
+          createdAt: new Date().toISOString(),
+          reviewedAt: null
+        };
+        set(state => ({ approvals: [...state.approvals, level2Approval] }));
+        get().setNotification({ type: 'success', message: '一级审批已通过，已提交至二级审批（碳收支专家）' });
+      } else if (approval.level === 2) {
+        get().setNotification({ type: 'success', message: '二级审批已通过，结果已推送至IPCC评估小组和海洋负排放工程组' });
+      }
     } else {
-      get().setNotification({ type: 'info', message: '审批已驳回' });
+      get().setNotification({ type: 'info', message: `审批已驳回，停留在${approval.level === 1 ? '一级' : '二级'}审批环节` });
     }
   },
 

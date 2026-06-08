@@ -64,35 +64,6 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 /**
- * Get carbon sink data by ID
- * GET /api/carbon/:id
- */
-router.get('/:id', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { id } = req.params;
-    const data = carbonSinkData.find(d => d.id === id);
-    
-    if (!data) {
-      res.status(404).json({
-        success: false,
-        error: '碳汇数据不存在'
-      });
-      return;
-    }
-
-    res.status(200).json({
-      success: true,
-      data
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: '获取碳汇数据详情失败'
-    });
-  }
-});
-
-/**
  * Export carbon sink data
  * GET /api/carbon/export
  */
@@ -113,6 +84,14 @@ router.get('/export', async (req: Request, res: Response): Promise<void> => {
     }
     if (year) {
       filtered = filtered.filter(d => d.year === parseInt(year as string));
+    }
+
+    if (filtered.length === 0) {
+      res.status(404).json({
+        success: false,
+        error: '碳汇数据不存在，请检查筛选条件'
+      });
+      return;
     }
 
     if (format === 'csv') {
@@ -226,6 +205,36 @@ router.get('/basin-status', async (req: Request, res: Response): Promise<void> =
     res.status(500).json({
       success: false,
       error: '获取海盆状态失败'
+    });
+  }
+});
+
+/**
+ * Get carbon sink data by ID
+ * GET /api/carbon/:id
+ * NOTE: This must be the last route to avoid matching static paths like /export or /basin-status
+ */
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const data = carbonSinkData.find(d => d.id === id);
+    
+    if (!data) {
+      res.status(404).json({
+        success: false,
+        error: '碳汇数据不存在'
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '获取碳汇数据详情失败'
     });
   }
 });

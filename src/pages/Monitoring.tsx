@@ -13,15 +13,17 @@ import {
   Sliders,
   TrendingUp,
   TrendingDown,
-  Info
+  Info,
+  History,
+  ChevronRight
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import { useStore } from '../store/useStore';
 import { alertLevelColors, alertLevelLabels, statusLabels } from '../utils/mockData';
-import { Alert, AlertLevel, BiologicalParams, Simulation } from '../../shared/types';
+import { Alert, AlertLevel, BiologicalParams, Simulation, ParamAdjustmentLog } from '../../shared/types';
 
 export const Monitoring: React.FC = () => {
-  const { simulations, alerts, monitoringMetrics, reviewAlert, setNotification } = useStore();
+  const { simulations, alerts, monitoringMetrics, reviewAlert, setNotification, paramAdjustmentLogs, user } = useStore();
   const [selectedSimulation, setSelectedSimulation] = useState<Simulation | null>(null);
   const [filterLevel, setFilterLevel] = useState<string>('all');
   const [filterReview, setFilterReview] = useState<string>('all');
@@ -31,6 +33,8 @@ export const Monitoring: React.FC = () => {
   const [reviewComment, setReviewComment] = useState('');
   const [adjustments, setAdjustments] = useState<Partial<BiologicalParams>>({});
   const [metricsData, setMetricsData] = useState(monitoringMetrics);
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [selectedSimulationId, setSelectedSimulationId] = useState<string | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -334,19 +338,41 @@ export const Monitoring: React.FC = () => {
                     </div>
                     {alert.reviewedAt && (
                       <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/10">
-                        <div className="flex items-center gap-1 text-xs text-white/50 mb-1">
+                        <div className="flex items-center gap-1 text-xs text-white/50 mb-2">
                           <User size={12} />
-                          {alert.reviewedByName} · {formatDate(alert.reviewedAt)}
+                          <span className="text-ocean-300">{alert.reviewedByName}</span>
+                          <span>·</span>
+                          <span>{formatDate(alert.reviewedAt)}</span>
                         </div>
-                        <p className="text-sm text-white/70">{alert.reviewComment}</p>
+                        <p className="text-sm text-white/70 mb-2">
+                          <span className="text-white/50">复核意见：</span>{alert.reviewComment}
+                        </p>
                         {alert.paramAdjustments && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {Object.entries(alert.paramAdjustments).map(([key, value]) => (
-                              <span key={key} className="px-2 py-0.5 bg-seaweed-500/20 text-seaweed-300 rounded text-xs font-mono">
-                                {paramLabels[key as keyof BiologicalParams]?.name}: {value}
-                              </span>
-                            ))}
-                          </div>
+                          <>
+                            <p className="text-xs text-white/50 mb-2">参数调整记录：</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {Object.entries(alert.paramAdjustments).map(([key, newValue]) => {
+                                const log = paramAdjustmentLogs.find(l => l.alertId === alert.id);
+                                const oldValue = log?.oldParams[key as keyof BiologicalParams];
+                                const label = paramLabels[key as keyof BiologicalParams];
+                                return (
+                                  <div key={key} className="p-2 rounded-lg bg-ocean-500/10 border border-ocean-500/20">
+                                    <div className="text-xs text-white/60 mb-1">{label?.name}</div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs text-white/40 font-mono">
+                                        {oldValue?.toFixed(key === 'mortalityRate' ? 3 : key === 'growthRate' || key === 'sinkingRate' ? 2 : 0)}
+                                      </span>
+                                      <span className="text-ocean-400">→</span>
+                                      <span className="text-xs text-seaweed-400 font-mono font-semibold">
+                                        {(newValue as number).toFixed(key === 'mortalityRate' ? 3 : key === 'growthRate' || key === 'sinkingRate' ? 2 : 0)}
+                                      </span>
+                                      <span className="text-xs text-white/40">{label?.unit}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
                         )}
                       </div>
                     )}
@@ -363,6 +389,129 @@ export const Monitoring: React.FC = () => {
               </div>
             ))
           )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <History size={18} className="text-ocean-400" />
+            <span>参数调整日志</span>
+            <span className="text-xs text-white/50 ml-2">({paramAdjustmentLogs.length} 条记录)</span>
+          </div>
+          <select
+            value={selectedSimulationId || ''}
+            onChange={(e) => setSelectedSimulationId(e.target.value || null)}
+            className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:border-ocean-500/50"
+          >
+            <option value="" className="bg-ocean-900">全部模拟</option>
+            {simulations.map(sim => (
+              <option key={sim.id} value={sim.id} className="bg-ocean-900">{sim.name}</option>
+            ))}
+          </select>
+        </div>
+        
+        <div className="divide-y divide-white/5 max-h-[500px] overflow-y-auto">
+          {(() => {
+            const filteredLogs = selectedSimulationId 
+              ? paramAdjustmentLogs.filter(l => l.simulationId === selectedSimulationId)
+              : paramAdjustmentLogs;
+            
+            if (filteredLogs.length === 0) {
+              return (
+                <div className="p-12 text-center text-white/50">
+                  <History size={48} className="mx-auto mb-3 opacity-30" />
+                  <p>暂无参数调整记录</p>
+                </div>
+              );
+            }
+
+            return filteredLogs.map((log: ParamAdjustmentLog) => {
+              const sim = simulations.find(s => s.id === log.simulationId);
+              const alert = log.alertId ? alerts.find(a => a.id === log.alertId) : null;
+              
+              return (
+                <div key={log.id} className="p-5 hover:bg-white/5 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-ocean-500/20 text-ocean-300">
+                          参数调整
+                        </span>
+                        <h3 className="text-white font-medium">{sim?.name || '未知模拟'}</h3>
+                        {alert && (
+                          <span className={`status-badge ${alertLevelColors[alert.level]}`}>
+                            {alertLevelLabels[alert.level]}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-6 text-xs text-white/40 mb-3">
+                        <div className="flex items-center gap-1">
+                          <User size={12} />
+                          <span className="text-ocean-300">{user?.name || '系统用户'}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Clock size={12} />
+                          <span>{formatDate(log.createdAt)}</span>
+                        </div>
+                        {sim && (
+                          <div className="flex items-center gap-1">
+                            <span className="px-2 py-0.5 bg-coral-500/20 text-coral-300 rounded text-xs">
+                              {sim.oceanBasin}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mb-3 p-3 rounded-lg bg-white/5 border border-white/10">
+                        <p className="text-xs text-white/50 mb-1">调整原因：</p>
+                        <p className="text-sm text-white/70">{log.reason}</p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-white/50 mb-2">参数变更详情：</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {Object.entries(log.newParams).map(([key, newValue]) => {
+                            const oldValue = log.oldParams[key as keyof BiologicalParams];
+                            const hasChanged = oldValue !== newValue;
+                            const label = paramLabels[key as keyof BiologicalParams];
+                            
+                            return (
+                              <div 
+                                key={key} 
+                                className={`p-3 rounded-lg border ${
+                                  hasChanged 
+                                    ? 'bg-seaweed-500/10 border-seaweed-500/30' 
+                                    : 'bg-white/5 border-white/10'
+                                }`}
+                              >
+                                <div className="text-xs text-white/60 mb-1">{label?.name}</div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-xs font-mono ${hasChanged ? 'text-white/40 line-through' : 'text-white/60'}`}>
+                                    {oldValue?.toFixed(key === 'mortalityRate' ? 3 : key === 'growthRate' || key === 'sinkingRate' ? 2 : 0)}
+                                  </span>
+                                  {hasChanged && (
+                                    <>
+                                      <ChevronRight size={12} className="text-seaweed-400" />
+                                      <span className="text-xs font-mono font-semibold text-seaweed-400">
+                                        {(newValue as number).toFixed(key === 'mortalityRate' ? 3 : key === 'growthRate' || key === 'sinkingRate' ? 2 : 0)}
+                                      </span>
+                                    </>
+                                  )}
+                                  <span className="text-xs text-white/40 ml-1">{label?.unit}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
 

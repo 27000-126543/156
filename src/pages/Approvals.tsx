@@ -80,6 +80,7 @@ export const Approvals: React.FC = () => {
   const approvedApprovals = approvals.filter(a => a.status === ApprovalStatus.APPROVED);
   const level1Pending = pendingApprovals.filter(a => a.level === 1);
   const level2Pending = pendingApprovals.filter(a => a.level === 2);
+  const pushedToIPCC = approvals.filter(a => a.status === ApprovalStatus.APPROVED && a.level === 2);
 
   const getRelatedSimulation = (simulationId: string) => {
     return simulations.find(s => s.id === simulationId);
@@ -139,7 +140,7 @@ export const Approvals: React.FC = () => {
             <Send size={24} className="text-coral-400" />
           </div>
           <div>
-            <p className="text-2xl font-bold text-white font-mono">{approvedApprovals.length}</p>
+            <p className="text-2xl font-bold text-white font-mono">{pushedToIPCC.length}</p>
             <p className="text-xs text-white/50">已推送</p>
           </div>
         </div>

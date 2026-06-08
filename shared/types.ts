@@ -192,5 +192,64 @@ export interface BasinStatus {
   consecutiveDeviations: number;
   isPaused: boolean;
   lastNppValues: number[];
+  lastDeviations: number[];
   notifiedAt: string | null;
+  lockedAt: string | null;
+  lockedReason: string;
+  notifiedParties: string[];
+  currentHandler: string | null;
+  currentHandlerName: string | null;
+  unlockReason: string | null;
+  unlockedAt: string | null;
+  unlockedBy: string | null;
+  unlockedByName: string | null;
+}
+
+export interface RetestSimulation {
+  id: string;
+  basin: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  nppDeviation: number | null;
+  threshold: number;
+  uploadedAt: string;
+  completedAt: string | null;
+  result: 'pass' | 'fail' | null;
+  recommendation: string | null;
+  calibrationData: {
+    name: string;
+    size: number;
+    uploadedBy: string;
+  } | null;
+}
+
+export interface RecoveryAssessment {
+  id: string;
+  basin: string;
+  retestHistory: RetestSimulation[];
+  consecutivePasses: number;
+  requiredPasses: number;
+  status: 'in_progress' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export interface ReportVersion {
+  id: string;
+  generatedAt: string;
+  generatedBy: string;
+  generatedByName: string;
+  filters: {
+    basin: string;
+    season: string;
+    scenario: string;
+    year: number | null;
+  };
+  summary: {
+    totalCarbonSink: number;
+    avgCarbonSink: number;
+    recordCount: number;
+    basins: string[];
+  };
+  format: 'pdf' | 'excel' | 'csv';
+  fileSize: number;
 }

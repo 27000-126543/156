@@ -335,6 +335,160 @@ export const Reports: React.FC = () => {
     };
   };
 
+  const getNutrientSectionOption = () => {
+    const depths = [0, 50, 100, 200, 500, 1000, 2000, 4000];
+    const generateNutrientData = (base: number, decay: number) => 
+      depths.map(d => base * Math.exp(-d / decay) * (0.9 + Math.random() * 0.2));
+
+    return {
+      backgroundColor: 'transparent',
+      title: {
+        text: '营养盐断面分布 (μmol kg⁻¹)',
+        textStyle: { color: 'rgba(255,255,255,0.8)', fontSize: 14 }
+      },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(10, 36, 99, 0.95)',
+        borderColor: 'rgba(62, 146, 204, 0.3)',
+        textStyle: { color: '#fff' },
+        axisPointer: { type: 'cross' }
+      },
+      legend: {
+        data: ['硝酸盐 (NO₃)', '磷酸盐 (PO₄)', '硅酸盐 (SiO₂)'],
+        textStyle: { color: 'rgba(255,255,255,0.6)' },
+        top: 30
+      },
+      grid: { left: '3%', right: '4%', bottom: '3%', top: '20%', containLabel: true },
+      xAxis: {
+        type: 'value',
+        name: '浓度 (μmol kg⁻¹)',
+        axisLine: { lineStyle: { color: 'rgba(255,255,255,0.2)' } },
+        axisLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11 }
+      },
+      yAxis: {
+        type: 'value',
+        name: '深度 (m)',
+        inverse: true,
+        axisLine: { lineStyle: { color: 'rgba(255,255,255,0.2)' } },
+        splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
+        axisLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11 }
+      },
+      series: [
+        {
+          name: '硝酸盐 (NO₃)',
+          data: depths.map((d, i) => [generateNutrientData(25, 800)[i], d]),
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          lineStyle: { width: 2 },
+          itemStyle: { color: '#3E92CC' }
+        },
+        {
+          name: '磷酸盐 (PO₄)',
+          data: depths.map((d, i) => [generateNutrientData(2, 600)[i], d]),
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          lineStyle: { width: 2 },
+          itemStyle: { color: '#F46036' }
+        },
+        {
+          name: '硅酸盐 (SiO₂)',
+          data: depths.map((d, i) => [generateNutrientData(70, 1200)[i], d]),
+          type: 'line',
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 6,
+          lineStyle: { width: 2 },
+          itemStyle: { color: '#F7CB15' }
+        }
+      ]
+    };
+  };
+
+  const getOMZEvolutionOption = () => {
+    const generateOMZData = () => {
+      return scenarios.map(scenario => {
+        const factor = scenario === 'SSP5-8.5' ? 1.5 : scenario === 'SSP2-4.5' ? 1.2 : 1.0;
+        return {
+          name: scenario,
+          data: years.map(year => {
+            const baseYear = year - 2000;
+            return Math.round(15000 * factor * (1 + baseYear * 0.02) + Math.random() * 500);
+          })
+        };
+      });
+    };
+
+    const omzData = generateOMZData();
+    const colors = ['#1B998B', '#3E92CC', '#F46036'];
+
+    return {
+      backgroundColor: 'transparent',
+      title: {
+        text: '氧气最小带(OMZ)演化 - 缺氧区面积变化 (km²)',
+        textStyle: { color: 'rgba(255,255,255,0.8)', fontSize: 14 }
+      },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(10, 36, 99, 0.95)',
+        borderColor: 'rgba(62, 146, 204, 0.3)',
+        textStyle: { color: '#fff' },
+        formatter: (params: any) => {
+          let result = params[0].axisValue + '年<br/>';
+          params.forEach((p: any) => {
+            result += p.marker + p.seriesName + ': ' + Number(p.value).toLocaleString() + ' km²<br/>';
+          });
+          return result;
+        }
+      },
+      legend: {
+        data: scenarios,
+        textStyle: { color: 'rgba(255,255,255,0.6)' },
+        top: 30
+      },
+      grid: { left: '3%', right: '4%', bottom: '3%', top: '20%', containLabel: true },
+      xAxis: {
+        type: 'category',
+        data: years,
+        axisLine: { lineStyle: { color: 'rgba(255,255,255,0.2)' } },
+        axisLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 11 }
+      },
+      yAxis: {
+        type: 'value',
+        name: '缺氧区面积 (km²)',
+        axisLine: { lineStyle: { color: 'rgba(255,255,255,0.2)' } },
+        splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } },
+        axisLabel: {
+          color: 'rgba(255,255,255,0.5)', fontSize: 11,
+          formatter: (value: number) => (value / 1000).toFixed(0) + 'k'
+        }
+      },
+      series: omzData.map((s, i) => ({
+        name: s.name,
+        data: s.data,
+        type: 'line',
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        lineStyle: { width: 2, color: colors[i % colors.length] },
+        itemStyle: { color: colors[i % colors.length] },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: colors[i % colors.length] + '40' },
+              { offset: 1, color: colors[i % colors.length] + '00' }
+            ]
+          }
+        }
+      }))
+    };
+  };
+
   const generatePDF = async () => {
     if (!reportRef.current) return;
     
@@ -625,6 +779,27 @@ export const Reports: React.FC = () => {
             </div>
           </div>
           <ReactECharts option={getBiomassOption()} style={{ height: '300px' }} theme="dark" />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="card">
+            <div className="card-header">
+              <div className="flex items-center gap-2">
+                <TrendingUp size={18} className="text-ocean-400" />
+                <span>营养盐断面分布</span>
+              </div>
+            </div>
+            <ReactECharts option={getNutrientSectionOption()} style={{ height: '300px' }} theme="dark" />
+          </div>
+          <div className="card">
+            <div className="card-header">
+              <div className="flex items-center gap-2">
+                <BarChart3 size={18} className="text-coral-400" />
+                <span>氧气最小带演化</span>
+              </div>
+            </div>
+            <ReactECharts option={getOMZEvolutionOption()} style={{ height: '300px' }} theme="dark" />
+          </div>
         </div>
 
         <div className="card">

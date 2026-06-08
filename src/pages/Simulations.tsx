@@ -22,12 +22,14 @@ import { statusLabels } from '../utils/mockData';
 import { Simulation, SimulationStatus } from '../../shared/types';
 
 export const Simulations: React.FC = () => {
-  const { simulations, setCurrentSimulation, currentSimulation } = useStore();
+  const { simulations, setCurrentSimulation, currentSimulation, basinStatuses } = useStore();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterBasin, setFilterBasin] = useState<string>('all');
   const [showDetail, setShowDetail] = useState(false);
+
+  const pausedBasins = basinStatuses.filter(b => b.isPaused).map(b => b.basin);
 
   const filteredSimulations = simulations.filter(sim => {
     const matchesSearch = sim.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -77,6 +79,22 @@ export const Simulations: React.FC = () => {
         </div>
       </div>
 
+      {pausedBasins.length > 0 && (
+        <div className="p-4 rounded-xl bg-coral-500/10 border border-coral-500/30">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={20} className="text-coral-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-coral-300">
+                ⚠️ 以下海盆已被暂停新任务：{pausedBasins.join('、')}
+              </p>
+              <p className="text-xs text-white/60 mt-1">
+                这些海盆连续三次模拟NPP偏差超过20%，已自动锁定。现有任务不受影响，但无法创建新任务。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card p-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="relative flex-1 min-w-[250px]">
@@ -108,7 +126,13 @@ export const Simulations: React.FC = () => {
             >
               <option value="all" className="bg-ocean-900">全部海盆</option>
               {basins.map(basin => (
-                <option key={basin} value={basin} className="bg-ocean-900">{basin}</option>
+                <option 
+                  key={basin} 
+                  value={basin} 
+                  className="bg-ocean-900"
+                >
+                  {basin} {pausedBasins.includes(basin) ? '🔒' : ''}
+                </option>
               ))}
             </select>
           </div>

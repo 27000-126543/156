@@ -36,7 +36,7 @@ const defaultParams: BiologicalParams = {
 };
 
 export const DataUpload: React.FC = () => {
-  const { uploadedFiles, addUploadedFile, updateFileProgress, removeUploadedFile, createSimulation, setNotification } = useStore();
+  const { uploadedFiles, addUploadedFile, updateFileProgress, removeUploadedFile, createSimulation, setNotification, basinStatuses } = useStore();
   const [isDragging, setIsDragging] = useState(false);
   const [showParams, setShowParams] = useState(false);
   const [params, setParams] = useState<BiologicalParams>(defaultParams);
@@ -48,6 +48,9 @@ export const DataUpload: React.FC = () => {
     scenario: 'SSP2-4.5'
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const selectedBasinStatus = basinStatuses.find(b => b.basin === simulationConfig.oceanBasin);
+  const isBasinPaused = selectedBasinStatus?.isPaused || false;
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -132,6 +135,10 @@ export const DataUpload: React.FC = () => {
   };
 
   const handleCreateSimulation = () => {
+    if (isBasinPaused) {
+      setNotification({ type: 'error', message: `${simulationConfig.oceanBasin}区域已被暂停，无法创建新的模拟任务。该海盆连续三次NPP偏差超过20%，已自动锁定。请联系首席科学家排查。` });
+      return;
+    }
     if (uploadedFiles.filter(f => f.status === 'success').length === 0) {
       setNotification({ type: 'error', message: '请先上传至少一个数据文件' });
       return;
@@ -466,25 +473,50 @@ export const DataUpload: React.FC = () => {
             </button>
           </div>
 
-          <button
-            onClick={handleCreateSimulation}
-            disabled={uploadedFiles.filter(f => f.status === 'success').length === 0}
-            className="w-full py-4 bg-gradient-to-r from-ocean-500 to-seaweed-500 hover:from-ocean-400 hover:to-seaweed-400 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg shadow-ocean-500/30 hover:shadow-xl hover:shadow-ocean-500/40 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            <Play size={20} />
-            开始构建三维耦合模型
-          </button>
-
-          <div className="p-4 rounded-xl bg-coral-500/10 border border-coral-500/30">
-            <div className="flex items-start gap-2">
-              <AlertCircle size={16} className="text-coral-400 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-coral-300">太平洋区域任务暂停</p>
-                <p className="text-xs text-white/60 mt-1">
-                  该海盆连续三次模拟NPP偏差超过20%，已自动暂停新任务。请联系首席科学家排查。
-                </p>
+          <div className="space-y-3">
+            {isBasinPaused ? (
+              <div className="p-4 rounded-xl bg-coral-500/10 border border-coral-500/30">
+                <div className="flex items-start gap-2">
+                  <AlertCircle size={16} className="text-coral-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-coral-300">
+                      🔒 {simulationConfig.oceanBasin}区域任务已锁定
+                    </p>
+                    <p className="text-xs text-white/60 mt-1">
+                      该海盆连续三次模拟NPP偏差超过20%，已自动暂停新任务。当前连续偏差次数：<span className="text-coral-400 font-semibold">{selectedBasinStatus?.consecutiveDeviations || 0}次</span>。请联系首席科学家排查。
+                    </p>
+                    {selectedBasinStatus?.notifiedAt && (
+                      <p className="text-xs text-white/40 mt-1">
+                        首次通知时间：{new Date(selectedBasinStatus.notifiedAt).toLocaleString('zh-CN')}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-seaweed-500/10 border border-seaweed-500/30">
+                <div className="flex items-start gap-2">
+                  <CheckCircle size={16} className="text-seaweed-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-seaweed-300">
+                      ✅ {simulationConfig.oceanBasin}区域状态正常
+                    </p>
+                    <p className="text-xs text-white/60 mt-1">
+                      该海盆近期模拟结果稳定，NPP偏差在可接受范围内。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={handleCreateSimulation}
+              disabled={uploadedFiles.filter(f => f.status === 'success').length === 0 || isBasinPaused}
+              className="w-full py-4 bg-gradient-to-r from-ocean-500 to-seaweed-500 hover:from-ocean-400 hover:to-seaweed-400 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg shadow-ocean-500/30 hover:shadow-xl hover:shadow-ocean-500/40 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <Play size={20} />
+              {isBasinPaused ? '海盆已锁定，无法创建' : '开始构建三维耦合模型'}
+            </button>
           </div>
         </div>
       </div>
