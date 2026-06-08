@@ -203,6 +203,57 @@ export interface BasinStatus {
   unlockedAt: string | null;
   unlockedBy: string | null;
   unlockedByName: string | null;
+  workOrderId: string | null;
+}
+
+export type WorkOrderEventType = 
+  | 'lock_triggered' 
+  | 'notification_sent' 
+  | 'handler_assigned' 
+  | 'calibration_uploaded' 
+  | 'retest_started' 
+  | 'retest_completed' 
+  | 'expert_opinion' 
+  | 'remark_added'
+  | 'next_plan_set'
+  | 'auto_unlocked' 
+  | 'manual_unlocked';
+
+export interface WorkOrderEvent {
+  id: string;
+  type: WorkOrderEventType;
+  title: string;
+  description: string;
+  timestamp: string;
+  handledBy: string | null;
+  handledByName: string | null;
+  metadata?: Record<string, any>;
+}
+
+export interface WorkOrderRemark {
+  id: string;
+  content: string;
+  createdAt: string;
+  createdBy: string;
+  createdByName: string;
+}
+
+export interface BasinWorkOrder {
+  id: string;
+  basin: string;
+  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  currentStep: number;
+  steps: { id: string; title: string; completed: boolean; completedAt: string | null }[];
+  events: WorkOrderEvent[];
+  remarks: WorkOrderRemark[];
+  nextPlan: string | null;
+  nextPlanUpdatedAt: string | null;
+  nextPlanUpdatedBy: string | null;
+  nextPlanUpdatedByName: string | null;
+  preLockDeviations: number[];
+  preLockNppValues: number[];
+  createdAt: string;
+  resolvedAt: string | null;
 }
 
 export interface RetestSimulation {
@@ -220,6 +271,10 @@ export interface RetestSimulation {
     size: number;
     uploadedBy: string;
   } | null;
+  preLockDeviations: number[];
+  postRetestDeviation: number | null;
+  improvementPercent: number | null;
+  countsTowardUnlock: boolean;
 }
 
 export interface RecoveryAssessment {
@@ -231,6 +286,8 @@ export interface RecoveryAssessment {
   status: 'in_progress' | 'completed' | 'failed';
   startedAt: string;
   completedAt: string | null;
+  preLockDeviations: number[];
+  preLockNppValues: number[];
 }
 
 export interface ReportVersion {
@@ -252,4 +309,9 @@ export interface ReportVersion {
   };
   format: 'pdf' | 'excel' | 'csv';
   fileSize: number;
+  snapshot: {
+    chartsData: Record<string, any>;
+    dataPreview: any[];
+    generationParams: Record<string, any>;
+  } | null;
 }

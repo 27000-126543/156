@@ -148,9 +148,15 @@ export const Login: React.FC = () => {
           </form>
 
           <div className="mt-6 pt-6 border-t border-white/10">
-            <p className="text-center text-xs text-white/50">
-              演示账号: chemist@ocean.edu / password
+            <p className="text-center text-xs text-white/50 mb-3">
+              演示账号:
             </p>
+            <div className="grid grid-cols-2 gap-2 text-[10px] text-white/50">
+              <div>chemist@ocean.edu / password</div>
+              <div>carbon@ocean.edu / password</div>
+              <div>chief@ocean.edu / password</div>
+              <div>admin@ocean.edu / password</div>
+            </div>
           </div>
         </div>
 

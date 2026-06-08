@@ -21,7 +21,7 @@ import {
   RecoveryAssessment,
   RetestSimulation
 } from '../../shared/types';
-import { generateMockSimulations, generateMockAlerts, generateMockMetrics, generateMockApprovals, generateMockRecommendations, generateMockCarbonSinkData, generateMockPerformanceStats, generateMockBasinStatus, generateMockReportVersions, mockUser } from '../utils/mockData';
+import { generateMockSimulations, generateMockAlerts, generateMockMetrics, generateMockApprovals, generateMockRecommendations, generateMockCarbonSinkData, generateMockPerformanceStats, generateMockBasinStatus, generateMockReportVersions, mockUser, getUserByEmail } from '../utils/mockData';
 
 interface AppState {
   user: User | null;
@@ -93,7 +93,13 @@ export const useStore = create<AppState>((set, get) => ({
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     if (email && password) {
-      const user: User = { ...mockUser, email };
+      const matchedUser = getUserByEmail(email);
+      if (matchedUser) {
+        set({ user: matchedUser, isAuthenticated: true, isLoading: false });
+        get().loadData();
+        return true;
+      }
+      const user: User = { ...mockUser, email, name: email.split('@')[0] };
       set({ user, isAuthenticated: true, isLoading: false });
       get().loadData();
       return true;
