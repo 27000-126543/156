@@ -14,7 +14,8 @@ import {
   Waves,
   ChevronLeft,
   ChevronRight,
-  Bell
+  Bell,
+  Shield
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 
@@ -38,6 +39,7 @@ export const Sidebar: React.FC = () => {
     { id: 'recommendations', label: '智能推荐', icon: <Brain size={20} />, path: '/recommendations' },
     { id: 'approvals', label: '审批流程', icon: <CheckSquare size={20} />, path: '/approvals' },
     { id: 'reports', label: '报告中心', icon: <FileBarChart size={20} />, path: '/reports' },
+    { id: 'basin-governance', label: '海盆治理', icon: <Shield size={20} />, path: '/basin-governance' },
     { id: 'settings', label: '系统设置', icon: <Settings size={20} />, path: '/settings' },
   ];
 

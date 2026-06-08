@@ -14,6 +14,7 @@ import { Recommendations } from "./pages/Recommendations";
 import { Approvals } from "./pages/Approvals";
 import { Reports } from "./pages/Reports";
 import { SettingsPage } from "./pages/Settings";
+import { BasinGovernance } from "./pages/BasinGovernance";
 
 function AppLayout() {
   const { sidebarCollapsed, notification, isLoading } = useStore();
@@ -33,6 +34,7 @@ function AppLayout() {
             <Route path="/recommendations" element={<Recommendations />} />
             <Route path="/approvals" element={<Approvals />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/basin-governance" element={<BasinGovernance />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

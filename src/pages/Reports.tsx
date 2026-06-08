@@ -22,12 +22,12 @@ import {
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import { useStore } from '../store/useStore';
-import { CarbonSinkData, SimulationStatus } from '../../shared/types';
+import { CarbonSinkData, SimulationStatus, ReportVersion } from '../../shared/types';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 export const Reports: React.FC = () => {
-  const { simulations, carbonSinkData, setNotification } = useStore();
+  const { simulations, carbonSinkData, setNotification, addReportVersion, reportVersions } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBasin, setFilterBasin] = useState<string>('all');
   const [filterSeason, setFilterSeason] = useState<string>('all');
@@ -526,7 +526,28 @@ export const Reports: React.FC = () => {
       const fileName = `海洋碳汇评估报告_${new Date().toISOString().split('T')[0]}.pdf`;
       pdf.save(fileName);
       
-      setNotification({ type: 'success', message: 'PDF报告生成成功' });
+      const totalCarbon = filteredData.reduce((sum, d) => sum + d.totalCarbonSink, 0);
+      const avgCarbon = filteredData.length > 0 ? totalCarbon / filteredData.length : 0;
+      const basinsIncluded = Array.from(new Set(filteredData.map(d => d.basin)));
+      
+      addReportVersion({
+        filters: {
+          basin: filterBasin,
+          season: filterSeason,
+          scenario: filterScenario,
+          year: null
+        },
+        summary: {
+          totalCarbonSink: Math.round(totalCarbon * 100) / 100,
+          avgCarbonSink: Math.round(avgCarbon * 100) / 100,
+          recordCount: filteredData.length,
+          basins: basinsIncluded
+        },
+        format: 'pdf',
+        fileSize: canvas.width * canvas.height * 4
+      });
+      
+      setNotification({ type: 'success', message: 'PDF报告生成成功，版本记录已保存' });
     } catch (error) {
       console.error('PDF generation error:', error);
       setNotification({ type: 'error', message: 'PDF报告生成失败，请重试' });
@@ -577,8 +598,29 @@ export const Reports: React.FC = () => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
+      const totalCarbon = filteredData.reduce((sum, d) => sum + d.totalCarbonSink, 0);
+      const avgCarbon = filteredData.length > 0 ? totalCarbon / filteredData.length : 0;
+      const basinsIncluded = Array.from(new Set(filteredData.map(d => d.basin)));
+      
+      addReportVersion({
+        filters: {
+          basin: filterBasin,
+          season: filterSeason,
+          scenario: filterScenario,
+          year: null
+        },
+        summary: {
+          totalCarbonSink: Math.round(totalCarbon * 100) / 100,
+          avgCarbonSink: Math.round(avgCarbon * 100) / 100,
+          recordCount: filteredData.length,
+          basins: basinsIncluded
+        },
+        format: exportFormat as 'pdf' | 'excel' | 'csv',
+        fileSize: blob.size
+      });
+
       setIsGenerating(false);
-      setNotification({ type: 'success', message: `数据导出成功 (${exportFormat.toUpperCase()})` });
+      setNotification({ type: 'success', message: `数据导出成功 (${exportFormat.toUpperCase()})，版本记录已保存` });
     }, 1000);
   };
 
@@ -875,6 +917,97 @@ export const Reports: React.FC = () => {
           <p>• <strong className="text-white/80">氧气最小带演化：</strong>追踪缺氧区面积和体积的长期变化趋势</p>
           <p>• <strong className="text-white/80">排放情景：</strong>SSP1-2.6（可持续发展）、SSP2-4.5（中等排放）、SSP5-8.5（高排放）</p>
           <p>• <strong className="text-white/80">数据单位：</strong>碳汇Tg C yr⁻¹，碳泵Pg C yr⁻¹，生物量mg C m⁻³</p>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <div className="flex items-center gap-2">
+            <FileText size={18} className="text-seaweed-400" />
+            <span>报告版本追溯</span>
+            <span className="ml-auto px-2 py-0.5 bg-seaweed-500/20 text-seaweed-300 rounded text-xs">
+              共 {reportVersions.length} 条记录
+            </span>
+          </div>
+        </div>
+        <div className="divide-y divide-white/5 max-h-[400px] overflow-y-auto">
+          {reportVersions.length === 0 ? (
+            <div className="p-8 text-center text-white/50">
+              <FileText size={48} className="mx-auto mb-3 opacity-50" />
+              <p>暂无报告版本记录</p>
+              <p className="text-xs mt-1">生成报告或导出数据后将自动记录</p>
+            </div>
+          ) : (
+            reportVersions.map((version: ReportVersion) => (
+              <div key={version.id} className="p-4 hover:bg-white/5 transition-colors">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                      version.format === 'pdf' ? 'bg-coral-500/20 text-coral-400' : 
+                      version.format === 'csv' ? 'bg-seaweed-500/20 text-seaweed-400' : 
+                      'bg-ocean-500/20 text-ocean-400'
+                    }`}>
+                      {version.format === 'pdf' ? <FileText size={16} /> : 
+                       version.format === 'csv' ? <FileSpreadsheet size={16} /> : <FileSpreadsheet size={16} />}
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-white">
+                        {version.format.toUpperCase()} 报告
+                      </div>
+                      <div className="text-xs text-white/50">
+                        由 {version.generatedByName} · {new Date(version.generatedAt).toLocaleString('zh-CN')}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-mono text-ocean-400">
+                      {(version.fileSize / 1024 / 1024).toFixed(2)} MB
+                    </div>
+                    <div className="text-xs text-white/40">
+                      {version.summary.recordCount} 条记录
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                  <div className="p-2 rounded-lg bg-white/5">
+                    <div className="text-[10px] text-white/40 mb-0.5">海盆
+                        </div>
+                    <div className="text-xs text-white/70">
+                      {version.filters.basin === 'all' ? '全部' : version.filters.basin}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/5">
+                    <div className="text-[10px] text-white/40 mb-0.5">季节
+                        </div>
+                    <div className="text-xs text-white/70">
+                      {version.filters.season === 'all' ? '全部' : version.filters.season}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/5">
+                    <div className="text-[10px] text-white/40 mb-0.5">情景
+                        </div>
+                    <div className="text-xs text-white/70">
+                      {version.filters.scenario === 'all' ? '全部' : version.filters.scenario}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-white/5">
+                    <div className="text-[10px] text-white/40 mb-0.5">总碳汇
+                        </div>
+                    <div className="text-xs text-ocean-400 font-mono">
+                      {version.summary.totalCarbonSink.toFixed(0)} Tg
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-white/40">
+                  <span>包含海盆：
+                        </span>
+                  <span className="text-white/60">
+                    {version.summary.basins.join('、')}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

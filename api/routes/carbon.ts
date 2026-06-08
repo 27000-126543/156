@@ -184,16 +184,51 @@ router.get('/basin-status', async (req: Request, res: Response): Promise<void> =
         .sort((a, b) => b.year - a.year)
         .slice(0, 3);
       
-      const nppValues = recentData.map(d => d.totalCarbonSink / 1000 + Math.random() * 0.5);
-      const deviations = nppValues.map((v, i, arr) => i > 0 ? ((v - arr[0]) / arr[0]) * 100 : 0);
-      const consecutiveDeviations = deviations.filter(d => Math.abs(d) > 20).length;
+      let nppValues: number[];
+      let deviations: number[];
+      let consecutiveDeviations: number;
+      let isPaused: boolean;
+      
+      if (basin === '太平洋') {
+        nppValues = [2.0, 1.4, 0.9];
+        deviations = [0, -30, -55];
+        consecutiveDeviations = 3;
+        isPaused = true;
+      } else {
+        nppValues = recentData.map(d => d.totalCarbonSink / 1000 + Math.random() * 0.5);
+        deviations = nppValues.map((v, i, arr) => i > 0 ? ((v - arr[0]) / arr[0]) * 100 : 0);
+        let consecutiveCount = 0;
+        let maxConsecutive = 0;
+        for (let i = 1; i < deviations.length; i++) {
+          if (Math.abs(deviations[i]) > 20) {
+            consecutiveCount++;
+            maxConsecutive = Math.max(maxConsecutive, consecutiveCount);
+          } else {
+            consecutiveCount = 0;
+          }
+        }
+        consecutiveDeviations = maxConsecutive;
+        isPaused = consecutiveDeviations >= 3;
+      }
+      
+      const notifiedParties = isPaused ? ['首席科学家', '海洋碳汇研究组', 'IPCC联络员'] : [];
       
       return {
         basin,
         consecutiveDeviations,
-        isPaused: consecutiveDeviations >= 3,
+        isPaused,
         lastNppValues: nppValues,
-        notifiedAt: consecutiveDeviations >= 3 ? new Date(Date.now() - 86400000).toISOString() : null
+        lastDeviations: deviations,
+        notifiedAt: isPaused ? new Date(Date.now() - 86400000 * 2).toISOString() : null,
+        lockedAt: isPaused ? new Date(Date.now() - 86400000).toISOString() : null,
+        lockedReason: isPaused ? '连续三次NPP偏差超过20%阈值，系统自动锁定' : '',
+        notifiedParties,
+        currentHandler: isPaused ? 'user-003' : null,
+        currentHandlerName: isPaused ? '李首席' : null,
+        unlockReason: null,
+        unlockedAt: null,
+        unlockedBy: null,
+        unlockedByName: null
       };
     });
 
@@ -205,6 +240,180 @@ router.get('/basin-status', async (req: Request, res: Response): Promise<void> =
     res.status(500).json({
       success: false,
       error: '获取海盆状态失败'
+    });
+  }
+});
+
+/**
+ * Get basin status for a specific basin
+ * GET /api/carbon/basin-status/:basin
+ */
+router.get('/basin-status/:basin', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { basin } = req.params;
+    
+    let nppValues: number[];
+    let deviations: number[];
+    let consecutiveDeviations: number;
+    let isPaused: boolean;
+    
+    if (basin === '太平洋') {
+      nppValues = [2.0, 1.4, 0.9];
+      deviations = [0, -30, -55];
+      consecutiveDeviations = 3;
+      isPaused = true;
+    } else {
+      const recentData = carbonSinkData
+        .filter(d => d.basin === basin)
+        .sort((a, b) => b.year - a.year)
+        .slice(0, 3);
+      
+      nppValues = recentData.map(d => d.totalCarbonSink / 1000 + Math.random() * 0.5);
+      deviations = nppValues.map((v, i, arr) => i > 0 ? ((v - arr[0]) / arr[0]) * 100 : 0);
+      let consecutiveCount = 0;
+      let maxConsecutive = 0;
+      for (let i = 1; i < deviations.length; i++) {
+        if (Math.abs(deviations[i]) > 20) {
+          consecutiveCount++;
+          maxConsecutive = Math.max(maxConsecutive, consecutiveCount);
+        } else {
+          consecutiveCount = 0;
+        }
+      }
+      consecutiveDeviations = maxConsecutive;
+      isPaused = consecutiveDeviations >= 3;
+    }
+    
+    const notifiedParties = isPaused ? ['首席科学家', '海洋碳汇研究组', 'IPCC联络员'] : [];
+    
+    const basinStatus = {
+      basin,
+      consecutiveDeviations,
+      isPaused,
+      lastNppValues: nppValues,
+      lastDeviations: deviations,
+      notifiedAt: isPaused ? new Date(Date.now() - 86400000 * 2).toISOString() : null,
+      lockedAt: isPaused ? new Date(Date.now() - 86400000).toISOString() : null,
+      lockedReason: isPaused ? '连续三次NPP偏差超过20%阈值，系统自动锁定' : '',
+      notifiedParties,
+      currentHandler: isPaused ? 'user-003' : null,
+      currentHandlerName: isPaused ? '李首席' : null,
+      unlockReason: null,
+      unlockedAt: null,
+      unlockedBy: null,
+      unlockedByName: null
+    };
+
+    res.status(200).json({
+      success: true,
+      data: basinStatus
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '获取海盆状态失败'
+    });
+  }
+});
+
+/**
+ * Unlock a basin manually
+ * POST /api/carbon/basin-status/:basin/unlock
+ */
+router.post('/basin-status/:basin/unlock', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { basin } = req.params;
+    const { reason, userId, userName } = req.body;
+    
+    if (!reason || !userId || !userName) {
+      res.status(400).json({
+        success: false,
+        error: '解除锁定需要填写原因、操作人ID和姓名'
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        basin,
+        isPaused: false,
+        consecutiveDeviations: 0,
+        unlockReason: reason,
+        unlockedAt: new Date().toISOString(),
+        unlockedBy: userId,
+        unlockedByName: userName
+      },
+      message: `${basin}已成功解除锁定`
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '解除海盆锁定失败'
+    });
+  }
+});
+
+/**
+ * Get recovery assessment for a basin
+ * GET /api/carbon/recovery/:basin
+ */
+router.get('/recovery/:basin', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { basin } = req.params;
+    
+    const recoveryData = {
+      id: `recovery-${basin}`,
+      basin,
+      retestHistory: [
+        {
+          id: `retest-${basin}-001`,
+          basin,
+          status: 'completed' as const,
+          nppDeviation: -22.5,
+          threshold: 20,
+          uploadedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+          completedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+          result: 'fail' as const,
+          recommendation: '建议重新校准营养盐初始条件，检查浮游植物死亡率参数设置',
+          calibrationData: {
+            name: '太平洋_NPP校准数据_20260601.nc',
+            size: 15728640,
+            uploadedBy: '张海洋'
+          }
+        },
+        {
+          id: `retest-${basin}-002`,
+          basin,
+          status: 'pending' as const,
+          nppDeviation: null,
+          threshold: 20,
+          uploadedAt: new Date(Date.now() - 3600000).toISOString(),
+          completedAt: null,
+          result: null,
+          recommendation: null,
+          calibrationData: {
+            name: '太平洋_NPP校准数据_20260608_revised.nc',
+            size: 16249856,
+            uploadedBy: '张海洋'
+          }
+        }
+      ],
+      consecutivePasses: 0,
+      requiredPasses: 2,
+      status: 'in_progress' as const,
+      startedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+      completedAt: null
+    };
+
+    res.status(200).json({
+      success: true,
+      data: recoveryData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: '获取恢复评估数据失败'
     });
   }
 });

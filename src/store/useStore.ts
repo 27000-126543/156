@@ -16,9 +16,12 @@ import {
   AlertLevel,
   UserRole,
   ApprovalStatus,
-  ParamAdjustmentLog
+  ParamAdjustmentLog,
+  ReportVersion,
+  RecoveryAssessment,
+  RetestSimulation
 } from '../../shared/types';
-import { generateMockSimulations, generateMockAlerts, generateMockMetrics, generateMockApprovals, generateMockRecommendations, generateMockCarbonSinkData, generateMockPerformanceStats, generateMockBasinStatus, mockUser } from '../utils/mockData';
+import { generateMockSimulations, generateMockAlerts, generateMockMetrics, generateMockApprovals, generateMockRecommendations, generateMockCarbonSinkData, generateMockPerformanceStats, generateMockBasinStatus, generateMockReportVersions, mockUser } from '../utils/mockData';
 
 interface AppState {
   user: User | null;
@@ -37,8 +40,10 @@ interface AppState {
   uploadedFiles: UploadedFile[];
   basinStatuses: BasinStatus[];
   paramAdjustmentLogs: ParamAdjustmentLog[];
+  reportVersions: ReportVersion[];
+  recoveryAssessments: RecoveryAssessment[];
   isLoading: boolean;
-  notification: { type: 'success' | 'error' | 'info'; message: string } | null;
+  notification: { type: 'success' | 'error' | 'info' | 'warning'; message: string } | null;
 
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
@@ -54,7 +59,10 @@ interface AppState {
   processApproval: (approvalId: string, approved: boolean, comments: string) => void;
   adoptRecommendation: (recId: string) => void;
   addParamAdjustmentLog: (log: Omit<ParamAdjustmentLog, 'id' | 'createdAt' | 'createdBy'>) => void;
-  setNotification: (notification: { type: 'success' | 'error' | 'info'; message: string } | null) => void;
+  unlockBasin: (basin: string, reason: string) => void;
+  addReportVersion: (version: Omit<ReportVersion, 'id' | 'generatedAt' | 'generatedBy' | 'generatedByName'>) => void;
+  addRetestSimulation: (basin: string, calibrationData: { name: string; size: number }) => void;
+  setNotification: (notification: { type: 'success' | 'error' | 'info' | 'warning'; message: string } | null) => void;
   loadData: () => void;
 }
 
@@ -75,6 +83,8 @@ export const useStore = create<AppState>((set, get) => ({
   uploadedFiles: [],
   basinStatuses: [],
   paramAdjustmentLogs: [],
+  reportVersions: [],
+  recoveryAssessments: [],
   isLoading: false,
   notification: null,
 
@@ -106,6 +116,9 @@ export const useStore = create<AppState>((set, get) => ({
       carbonSinkData: [],
       performanceStats: [],
       uploadedFiles: [],
+      basinStatuses: [],
+      reportVersions: [],
+      recoveryAssessments: [],
     });
   },
 
@@ -331,8 +344,55 @@ export const useStore = create<AppState>((set, get) => ({
       const carbonSinkData = generateMockCarbonSinkData();
       const performanceStats = generateMockPerformanceStats();
       const basinStatuses = generateMockBasinStatus();
+      const reportVersions = generateMockReportVersions();
 
       const unreadAlertCount = alerts.filter(a => !a.reviewedAt).length;
+      
+      const recoveryAssessments: RecoveryAssessment[] = [
+        {
+          id: 'recovery-太平洋',
+          basin: '太平洋',
+          retestHistory: [
+            {
+              id: 'retest-太平洋-001',
+              basin: '太平洋',
+              status: 'completed',
+              nppDeviation: -22.5,
+              threshold: 20,
+              uploadedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+              completedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+              result: 'fail',
+              recommendation: '建议重新校准营养盐初始条件，检查浮游植物死亡率参数设置',
+              calibrationData: {
+                name: '太平洋_NPP校准数据_20260601.nc',
+                size: 15728640,
+                uploadedBy: '张海洋'
+              }
+            },
+            {
+              id: 'retest-太平洋-002',
+              basin: '太平洋',
+              status: 'pending',
+              nppDeviation: null,
+              threshold: 20,
+              uploadedAt: new Date(Date.now() - 3600000).toISOString(),
+              completedAt: null,
+              result: null,
+              recommendation: null,
+              calibrationData: {
+                name: '太平洋_NPP校准数据_20260608_revised.nc',
+                size: 16249856,
+                uploadedBy: '张海洋'
+              }
+            }
+          ],
+          consecutivePasses: 0,
+          requiredPasses: 2,
+          status: 'in_progress',
+          startedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+          completedAt: null
+        }
+      ];
 
       set({
         simulations,
@@ -344,8 +404,173 @@ export const useStore = create<AppState>((set, get) => ({
         carbonSinkData,
         performanceStats,
         basinStatuses,
+        reportVersions,
+        recoveryAssessments,
         isLoading: false
       });
     }, 500);
+  },
+
+  unlockBasin: (basin: string, reason: string) => {
+    const user = get().user;
+    if (user?.role !== UserRole.CHIEF_SCIENTIST && user?.role !== UserRole.ADMIN) {
+      get().setNotification({ type: 'error', message: '只有首席科学家或管理员可以解除海盆锁定' });
+      return;
+    }
+
+    set(state => ({
+      basinStatuses: state.basinStatuses.map(b =>
+        b.basin === basin ? {
+          ...b,
+          isPaused: false,
+          consecutiveDeviations: 0,
+          unlockReason: reason,
+          unlockedAt: new Date().toISOString(),
+          unlockedBy: user.id,
+          unlockedByName: user.name,
+          currentHandler: null,
+          currentHandlerName: null
+        } : b
+      )
+    }));
+    get().setNotification({ type: 'success', message: `${basin}已成功解除锁定，现在可以创建新的模拟任务` });
+  },
+
+  addReportVersion: (version) => {
+    const user = get().user;
+    if (!user) return;
+
+    const newVersion: ReportVersion = {
+      ...version,
+      id: `report-${Date.now()}`,
+      generatedAt: new Date().toISOString(),
+      generatedBy: user.id,
+      generatedByName: user.name
+    };
+
+    set(state => ({
+      reportVersions: [newVersion, ...state.reportVersions]
+    }));
+  },
+
+  addRetestSimulation: (basin: string, calibrationData: { name: string; size: number }) => {
+    const user = get().user;
+    const newRetest: RetestSimulation = {
+      id: `retest-${basin}-${Date.now()}`,
+      basin,
+      status: 'pending',
+      nppDeviation: null,
+      threshold: 20,
+      uploadedAt: new Date().toISOString(),
+      completedAt: null,
+      result: null,
+      recommendation: null,
+      calibrationData: {
+        ...calibrationData,
+        uploadedBy: user?.name || '未知用户'
+      }
+    };
+
+    set(state => {
+      const existingAssessment = state.recoveryAssessments.find(a => a.basin === basin);
+      if (existingAssessment) {
+        return {
+          recoveryAssessments: state.recoveryAssessments.map(a =>
+            a.basin === basin ? {
+              ...a,
+              retestHistory: [...a.retestHistory, newRetest],
+              status: 'in_progress'
+            } : a
+          )
+        };
+      } else {
+        const newAssessment: RecoveryAssessment = {
+          id: `recovery-${basin}-${Date.now()}`,
+          basin,
+          retestHistory: [newRetest],
+          consecutivePasses: 0,
+          requiredPasses: 2,
+          status: 'in_progress',
+          startedAt: new Date().toISOString(),
+          completedAt: null
+        };
+        return {
+          recoveryAssessments: [...state.recoveryAssessments, newAssessment]
+        };
+      }
+    });
+    get().setNotification({ type: 'success', message: '复测模拟已提交，等待处理...' });
+
+    setTimeout(() => {
+      set(state => ({
+        recoveryAssessments: state.recoveryAssessments.map(a =>
+          a.basin === basin ? {
+            ...a,
+            retestHistory: a.retestHistory.map(r =>
+              r.id === newRetest.id ? { ...r, status: 'running' } : r
+            )
+          } : a
+        )
+      }));
+    }, 1000);
+
+    setTimeout(() => {
+      const deviation = (Math.random() - 0.5) * 40;
+      const result = Math.abs(deviation) <= 20 ? 'pass' : 'fail';
+      const recommendation = result === 'pass' 
+        ? '复测通过，NPP偏差在允许范围内。建议继续进行下一次复测。'
+        : '复测失败，NPP偏差仍超过阈值。建议检查浮游植物功能群参数或沉降速率设置。';
+
+      set(state => {
+        const assessment = state.recoveryAssessments.find(a => a.basin === basin);
+        const newConsecutivePasses = result === 'pass' 
+          ? (assessment?.consecutivePasses || 0) + 1 
+          : 0;
+        
+        const autoUnlock = newConsecutivePasses >= 2;
+        
+        return {
+          recoveryAssessments: state.recoveryAssessments.map(a =>
+            a.basin === basin ? {
+              ...a,
+              consecutivePasses: newConsecutivePasses,
+              status: autoUnlock ? 'completed' : 'in_progress',
+              completedAt: autoUnlock ? new Date().toISOString() : null,
+              retestHistory: a.retestHistory.map(r =>
+                r.id === newRetest.id ? {
+                  ...r,
+                  status: 'completed',
+                  nppDeviation: Math.round(deviation * 10) / 10,
+                  result,
+                  recommendation,
+                  completedAt: new Date().toISOString()
+                } : r
+              )
+            } : a
+          ),
+          basinStatuses: autoUnlock ? state.basinStatuses.map(b =>
+            b.basin === basin ? {
+              ...b,
+              isPaused: false,
+              consecutiveDeviations: 0,
+              unlockReason: '连续两次复测通过，系统自动解锁',
+              unlockedAt: new Date().toISOString(),
+              unlockedBy: 'system',
+              unlockedByName: '系统自动',
+              currentHandler: null,
+              currentHandlerName: null
+            } : b
+          ) : state.basinStatuses
+        };
+      });
+
+      const finalDeviation = (Math.random() - 0.5) * 40;
+      const finalResult = Math.abs(finalDeviation) <= 20 ? 'pass' : 'fail';
+      if (finalResult === 'pass') {
+        get().setNotification({ type: 'success', message: `复测完成！NPP偏差${Math.abs(finalDeviation).toFixed(1)}%，${finalResult === 'pass' ? '通过' : '未通过'}。${result === 'pass' ? '已满足解锁条件。' : ''}` });
+      } else {
+        get().setNotification({ type: 'warning', message: `复测完成！NPP偏差${Math.abs(finalDeviation).toFixed(1)}%，未通过。请参考建议调整参数后重新上传。` });
+      }
+    }, 4000);
   }
 }));

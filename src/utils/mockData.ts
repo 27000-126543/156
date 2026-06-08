@@ -13,7 +13,8 @@ import {
   SimulationStatus,
   AlertLevel,
   ApprovalStatus,
-  UserRole
+  UserRole,
+  ReportVersion
 } from '../../shared/types';
 
 export const mockUser: User = {
@@ -264,13 +265,78 @@ export function generateMockPerformanceStats(): PerformanceStats[] {
 }
 
 export function generateMockBasinStatus(): BasinStatus[] {
-  return oceanBasins.map((basin, i) => ({
-    basin,
-    consecutiveDeviations: i === 0 ? 3 : Math.floor(Math.random() * 3),
-    isPaused: i === 0,
-    lastNppValues: [1.2 + Math.random() * 0.3, 1.15 + Math.random() * 0.3, 1.1 + Math.random() * 0.3],
-    notifiedAt: i === 0 ? new Date(Date.now() - 86400000).toISOString() : null
-  }));
+  return oceanBasins.map((basin, i) => {
+    const isPacific = basin === '太平洋';
+    const nppValues = isPacific ? [2.0, 1.4, 0.9] : [1.2 + Math.random() * 0.3, 1.15 + Math.random() * 0.3, 1.1 + Math.random() * 0.3];
+    const deviations = isPacific ? [0, -30, -55] : nppValues.map((v, i, arr) => i > 0 ? ((v - arr[0]) / arr[0]) * 100 : 0);
+    
+    let consecutiveCount = 0;
+    let maxConsecutive = 0;
+    for (let j = 1; j < deviations.length; j++) {
+      if (Math.abs(deviations[j]) > 20) {
+        consecutiveCount++;
+        maxConsecutive = Math.max(maxConsecutive, consecutiveCount);
+      } else {
+        consecutiveCount = 0;
+      }
+    }
+    
+    const isPaused = isPacific || maxConsecutive >= 3;
+    const notifiedParties = isPaused ? ['首席科学家', '海洋碳汇研究组', 'IPCC联络员'] : [];
+    
+    return {
+      basin,
+      consecutiveDeviations: isPacific ? 3 : maxConsecutive,
+      isPaused,
+      lastNppValues: nppValues,
+      lastDeviations: deviations,
+      notifiedAt: isPaused ? new Date(Date.now() - 86400000 * 2).toISOString() : null,
+      lockedAt: isPaused ? new Date(Date.now() - 86400000).toISOString() : null,
+      lockedReason: isPaused ? '连续三次NPP偏差超过20%阈值，系统自动锁定' : '',
+      notifiedParties,
+      currentHandler: isPaused ? 'user-003' : null,
+      currentHandlerName: isPaused ? '李首席' : null,
+      unlockReason: null,
+      unlockedAt: null,
+      unlockedBy: null,
+      unlockedByName: null
+    };
+  });
+}
+
+export function generateMockReportVersions(): ReportVersion[] {
+  return [
+    {
+      id: 'report-001',
+      generatedAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+      generatedBy: 'user-001',
+      generatedByName: '张海洋',
+      filters: { basin: 'all', season: 'all', scenario: 'all', year: null },
+      summary: { totalCarbonSink: 12580, avgCarbonSink: 29.95, recordCount: 420, basins: ['太平洋', '大西洋', '印度洋', '北冰洋', '南大洋', '地中海', '加勒比海'] },
+      format: 'pdf',
+      fileSize: 2457600
+    },
+    {
+      id: 'report-002',
+      generatedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+      generatedBy: 'user-002',
+      generatedByName: '王碳汇',
+      filters: { basin: '太平洋', season: 'all', scenario: 'SSP2-4.5', year: null },
+      summary: { totalCarbonSink: 4280, avgCarbonSink: 71.33, recordCount: 60, basins: ['太平洋'] },
+      format: 'pdf',
+      fileSize: 1835008
+    },
+    {
+      id: 'report-003',
+      generatedAt: new Date(Date.now() - 86400000).toISOString(),
+      generatedBy: 'user-001',
+      generatedByName: '张海洋',
+      filters: { basin: 'all', season: '夏季', scenario: 'all', year: null },
+      summary: { totalCarbonSink: 3850, avgCarbonSink: 36.67, recordCount: 105, basins: ['太平洋', '大西洋', '印度洋', '北冰洋', '南大洋', '地中海', '加勒比海'] },
+      format: 'csv',
+      fileSize: 153600
+    }
+  ];
 }
 
 export const statusLabels: Record<SimulationStatus, string> = {
