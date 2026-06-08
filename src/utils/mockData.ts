@@ -356,19 +356,78 @@ export function generateMockBasinStatus(): BasinStatus[] {
 export function generateMockWorkOrders(): BasinWorkOrder[] {
   const workOrders: BasinWorkOrder[] = [];
   
+  const now = Date.now();
+  const day = 86400000;
+  
   const pacificWorkOrder: BasinWorkOrder = {
     id: 'wo-太平洋-001',
     basin: '太平洋',
     status: 'in_progress',
-    currentStep: 3,
+    currentStep: 4,
     steps: [
-      { id: 'step-1', title: '锁定触发', completed: true, completedAt: new Date(Date.now() - 86400000 * 2).toISOString() },
-      { id: 'step-2', title: '通知发送', completed: true, completedAt: new Date(Date.now() - 86400000 * 2 + 3600000).toISOString() },
-      { id: 'step-3', title: '处理人指派', completed: true, completedAt: new Date(Date.now() - 86400000 * 1.5).toISOString() },
-      { id: 'step-4', title: '校准数据上传', completed: true, completedAt: new Date(Date.now() - 86400000 * 0.5).toISOString() },
-      { id: 'step-5', title: '复测模拟', completed: false, completedAt: null },
-      { id: 'step-6', title: '专家意见', completed: false, completedAt: null },
-      { id: 'step-7', title: '最终解锁', completed: false, completedAt: null }
+      { 
+        id: 'step_lock', 
+        title: '锁定触发', 
+        completed: true, 
+        completedAt: new Date(now - day * 2).toISOString(),
+        deadline: new Date(now - day * 2 + 3600000).toISOString(),
+        handler: 'system',
+        handlerName: '系统自动'
+      },
+      { 
+        id: 'step_notification', 
+        title: '通知发送', 
+        completed: true, 
+        completedAt: new Date(now - day * 2 + 3600000).toISOString(),
+        deadline: new Date(now - day * 2 + 7200000).toISOString(),
+        handler: 'system',
+        handlerName: '系统自动'
+      },
+      { 
+        id: 'step_handler', 
+        title: '处理人指派', 
+        completed: true, 
+        completedAt: new Date(now - day * 1.5).toISOString(),
+        deadline: new Date(now - day * 1.5 + 3600000 * 4).toISOString(),
+        handler: 'user-004',
+        handlerName: '赵管理'
+      },
+      { 
+        id: 'step_calibration', 
+        title: '校准数据上传', 
+        completed: true, 
+        completedAt: new Date(now - day * 0.5).toISOString(),
+        deadline: new Date(now - day * 0.25).toISOString(),
+        handler: 'user-001',
+        handlerName: '张海洋'
+      },
+      { 
+        id: 'step_retest', 
+        title: '复测模拟', 
+        completed: false, 
+        completedAt: null,
+        deadline: new Date(now + day * 0.5).toISOString(),
+        handler: 'user-001',
+        handlerName: '张海洋'
+      },
+      { 
+        id: 'step_expert', 
+        title: '专家意见', 
+        completed: false, 
+        completedAt: null,
+        deadline: new Date(now + day * 1).toISOString(),
+        handler: 'user-002',
+        handlerName: '王碳汇'
+      },
+      { 
+        id: 'step_unlock', 
+        title: '最终解锁', 
+        completed: false, 
+        completedAt: null,
+        deadline: new Date(now + day * 1.5).toISOString(),
+        handler: 'user-003',
+        handlerName: '李首席'
+      }
     ],
     events: [
       {
@@ -376,9 +435,10 @@ export function generateMockWorkOrders(): BasinWorkOrder[] {
         type: 'lock_triggered',
         title: '海盆自动锁定',
         description: '系统检测到太平洋连续三次NPP偏差超过20%阈值（0%, -30%, -55%），已自动锁定该海盆。',
-        timestamp: new Date(Date.now() - 86400000 * 2).toISOString(),
+        timestamp: new Date(now - day * 2).toISOString(),
         handledBy: 'system',
         handledByName: '系统自动',
+        phase: 'lock',
         metadata: { deviations: [0, -30, -55], nppValues: [2.0, 1.4, 0.9] }
       },
       {
@@ -386,9 +446,10 @@ export function generateMockWorkOrders(): BasinWorkOrder[] {
         type: 'notification_sent',
         title: '预警通知已发送',
         description: '已向首席科学家、海洋碳汇研究组、IPCC联络员发送锁定预警通知。',
-        timestamp: new Date(Date.now() - 86400000 * 2 + 3600000).toISOString(),
+        timestamp: new Date(now - day * 2 + 3600000).toISOString(),
         handledBy: 'system',
         handledByName: '系统自动',
+        phase: 'notification',
         metadata: { recipients: ['首席科学家', '海洋碳汇研究组', 'IPCC联络员'] }
       },
       {
@@ -396,18 +457,20 @@ export function generateMockWorkOrders(): BasinWorkOrder[] {
         type: 'handler_assigned',
         title: '处理人已指派',
         description: '李首席科学家已被指派为太平洋海盆锁定问题的负责人。',
-        timestamp: new Date(Date.now() - 86400000 * 1.5).toISOString(),
+        timestamp: new Date(now - day * 1.5).toISOString(),
         handledBy: 'user-004',
-        handledByName: '赵管理'
+        handledByName: '赵管理',
+        phase: 'notification'
       },
       {
         id: 'evt-004',
         type: 'calibration_uploaded',
         title: '校准数据已上传',
         description: '张海洋已上传太平洋NPP校准数据文件（太平洋_NPP校准数据_20260601.nc，15MB）。',
-        timestamp: new Date(Date.now() - 86400000 * 0.5).toISOString(),
+        timestamp: new Date(now - day * 0.5).toISOString(),
         handledBy: 'user-001',
         handledByName: '张海洋',
+        phase: 'calibration',
         metadata: { fileName: '太平洋_NPP校准数据_20260601.nc', fileSize: 15728640 }
       },
       {
@@ -415,35 +478,42 @@ export function generateMockWorkOrders(): BasinWorkOrder[] {
         type: 'remark_added',
         title: '处理备注',
         description: '建议重点检查浮游植物死亡率参数和营养盐初始条件设置，这可能是导致NPP偏差的主要原因。',
-        timestamp: new Date(Date.now() - 86400000 * 0.3).toISOString(),
+        timestamp: new Date(now - day * 0.3).toISOString(),
         handledBy: 'user-003',
-        handledByName: '李首席'
+        handledByName: '李首席',
+        phase: 'calibration'
       }
     ],
     remarks: [
       {
         id: 'remark-001',
         content: '建议重点检查浮游植物死亡率参数和营养盐初始条件设置，这可能是导致NPP偏差的主要原因。',
-        createdAt: new Date(Date.now() - 86400000 * 0.3).toISOString(),
+        createdAt: new Date(now - day * 0.3).toISOString(),
         createdBy: 'user-003',
-        createdByName: '李首席'
+        createdByName: '李首席',
+        phase: 'calibration'
       },
       {
         id: 'remark-002',
         content: '已重新校准营养盐数据，最新的观测数据显示北太平洋副热带环流区的营养盐浓度比之前的模式输入高15-20%。',
-        createdAt: new Date(Date.now() - 86400000 * 0.1).toISOString(),
+        createdAt: new Date(now - day * 0.1).toISOString(),
         createdBy: 'user-001',
-        createdByName: '张海洋'
+        createdByName: '张海洋',
+        phase: 'calibration'
       }
     ],
     nextPlan: '1. 使用新校准的数据发起第一次复测模拟\n2. 分析复测结果，对比偏差改善情况\n3. 如复测通过，进行第二次复测验证\n4. 连续两次通过后自动解锁',
-    nextPlanUpdatedAt: new Date(Date.now() - 86400000 * 0.2).toISOString(),
+    nextPlanUpdatedAt: new Date(now - day * 0.2).toISOString(),
     nextPlanUpdatedBy: 'user-003',
     nextPlanUpdatedByName: '李首席',
     preLockDeviations: [0, -30, -55],
     preLockNppValues: [2.0, 1.4, 0.9],
-    createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    resolvedAt: null
+    createdAt: new Date(now - day * 2).toISOString(),
+    resolvedAt: null,
+    currentHandler: 'user-001',
+    currentHandlerName: '张海洋',
+    overdue: false,
+    reassignmentHistory: []
   };
   
   workOrders.push(pacificWorkOrder);
@@ -510,6 +580,17 @@ export function generateMockRecoveryAssessments(): RecoveryAssessment[] {
 
 export function generateMockReportVersions(): ReportVersion[] {
   return [
+    {
+      id: 'report-000',
+      generatedAt: new Date(Date.now() - 86400000 * 14).toISOString(),
+      generatedBy: 'user-001',
+      generatedByName: '张海洋',
+      filters: { basin: 'all', season: 'all', scenario: 'all', year: null },
+      summary: { totalCarbonSink: 12100, avgCarbonSink: 28.8, recordCount: 420, basins: ['太平洋', '大西洋', '印度洋', '北冰洋', '南大洋', '地中海', '加勒比海'] },
+      format: 'pdf',
+      fileSize: 2150000,
+      snapshot: null
+    },
     {
       id: 'report-001',
       generatedAt: new Date(Date.now() - 86400000 * 7).toISOString(),

@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   FileText,
   Download,
@@ -14,7 +14,6 @@ import {
   Globe,
   Cloud,
   FileSpreadsheet,
-  CheckCircle,
   Clock,
   Loader2,
   Info,
@@ -25,12 +24,16 @@ import {
   BarChart2,
   ArrowUpRight,
   Table,
-  AlertCircle
+  AlertCircle,
+  GitCompare,
+  CheckSquare,
+  Square,
+  ArrowDownUp
 } from 'lucide-react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import { useStore } from '../store/useStore';
-import { CarbonSinkData, SimulationStatus, ReportVersion } from '../../shared/types';
+import { SimulationStatus, ReportVersion } from '../../shared/types';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
@@ -44,6 +47,9 @@ export const Reports: React.FC = () => {
   const [exportFormat, setExportFormat] = useState<'pdf' | 'excel' | 'csv'>('pdf');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<ReportVersion | null>(null);
+  const [selectedForComparison, setSelectedForComparison] = useState<string[]>([]);
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
+  const [comparisonVersions, setComparisonVersions] = useState<[ReportVersion, ReportVersion] | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
   const basins = Array.from(new Set(carbonSinkData.map(d => d.basin)));
@@ -496,6 +502,90 @@ export const Reports: React.FC = () => {
           }
         }
       }))
+    };
+  };
+
+  const getFilterKey = (filters: ReportVersion['filters']) => {
+    return `${filters.basin}|${filters.season}|${filters.scenario}|${filters.year}`;
+  };
+
+  const groupedVersions = useMemo(() => {
+    const groups: Record<string, ReportVersion[]> = {};
+    reportVersions.forEach(version => {
+      const key = getFilterKey(version.filters);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(version);
+    });
+    return groups;
+  }, [reportVersions]);
+
+  const toggleVersionForComparison = (versionId: string) => {
+    setSelectedForComparison(prev => {
+      if (prev.includes(versionId)) {
+        return prev.filter(id => id !== versionId);
+      }
+      if (prev.length >= 2) {
+        setNotification({ type: 'warning', message: '最多只能选择两个版本进行对比' });
+        return prev;
+      }
+      return [...prev, versionId];
+    });
+  };
+
+  const openComparison = () => {
+    if (selectedForComparison.length !== 2) {
+      setNotification({ type: 'error', message: '请选择两个版本进行对比' });
+      return;
+    }
+    const v1 = reportVersions.find(v => v.id === selectedForComparison[0]);
+    const v2 = reportVersions.find(v => v.id === selectedForComparison[1]);
+    if (!v1 || !v2) {
+      setNotification({ type: 'error', message: '无法找到选中的版本' });
+      return;
+    }
+    const sorted = new Date(v1.generatedAt) < new Date(v2.generatedAt) ? [v1, v2] : [v2, v1];
+    setComparisonVersions(sorted as [ReportVersion, ReportVersion]);
+    setShowComparisonModal(true);
+  };
+
+  const closeComparison = () => {
+    setShowComparisonModal(false);
+    setComparisonVersions(null);
+    setSelectedForComparison([]);
+  };
+
+  const getDiffBadge = (oldVal: number | string, newVal: number | string) => {
+    if (oldVal === newVal) {
+      return <span className="px-2 py-0.5 bg-white/5 text-white/50 rounded text-xs">无变化</span>;
+    }
+    if (typeof oldVal === 'number' && typeof newVal === 'number') {
+      const diff = newVal - oldVal;
+      const percent = oldVal !== 0 ? (diff / oldVal) * 100 : 0;
+      if (diff > 0) {
+        return <span className="px-2 py-0.5 bg-seaweed-500/20 text-seaweed-300 rounded text-xs">+{diff.toFixed(1)} ({percent > 0 ? '+' : ''}{percent.toFixed(1)}%)</span>;
+      } else {
+        return <span className="px-2 py-0.5 bg-coral-500/20 text-coral-300 rounded text-xs">{diff.toFixed(1)} ({percent.toFixed(1)}%)</span>;
+      }
+    }
+    return <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded text-xs">已变更</span>;
+  };
+
+  const getSnapshotDisplay = (snapshot: ReportVersion['snapshot']) => {
+    if (!snapshot) {
+      return {
+        hasData: false,
+        carbonFlux: [],
+        pumpEfficiency: null,
+        scenarioComparison: [],
+        dataPreview: []
+      };
+    }
+    return {
+      hasData: true,
+      carbonFlux: Array.isArray(snapshot.chartsData?.carbonFlux) ? snapshot.chartsData.carbonFlux : [],
+      pumpEfficiency: snapshot.chartsData?.pumpEfficiency || null,
+      scenarioComparison: Array.isArray(snapshot.chartsData?.scenarioComparison) ? snapshot.chartsData.scenarioComparison : [],
+      dataPreview: Array.isArray(snapshot.dataPreview) ? snapshot.dataPreview : []
     };
   };
 
@@ -1025,12 +1115,36 @@ export const Reports: React.FC = () => {
           <div className="flex items-center gap-2">
             <FileText size={18} className="text-seaweed-400" />
             <span>报告版本追溯</span>
-            <span className="ml-auto px-2 py-0.5 bg-seaweed-500/20 text-seaweed-300 rounded text-xs">
+            <span className="ml-2 px-2 py-0.5 bg-seaweed-500/20 text-seaweed-300 rounded text-xs">
               共 {reportVersions.length} 条记录
             </span>
+            {selectedForComparison.length > 0 && (
+              <span className="px-2 py-0.5 bg-ocean-500/20 text-ocean-300 rounded text-xs">
+                已选择 {selectedForComparison.length}/2
+              </span>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              {selectedForComparison.length === 2 && (
+                <button
+                  onClick={openComparison}
+                  className="px-3 py-1.5 text-sm bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  <GitCompare size={14} />
+                  对比选中版本
+                </button>
+              )}
+              {selectedForComparison.length > 0 && (
+                <button
+                  onClick={() => setSelectedForComparison([])}
+                  className="px-3 py-1.5 text-sm bg-white/5 hover:bg-white/10 text-white/60 rounded-lg transition-colors"
+                >
+                  清除选择
+                </button>
+              )}
+            </div>
           </div>
         </div>
-        <div className="divide-y divide-white/5 max-h-[400px] overflow-y-auto">
+        <div className="divide-y divide-white/5 max-h-[600px] overflow-y-auto">
           {reportVersions.length === 0 ? (
             <div className="p-8 text-center text-white/50">
               <FileText size={48} className="mx-auto mb-3 opacity-50" />
@@ -1038,85 +1152,126 @@ export const Reports: React.FC = () => {
               <p className="text-xs mt-1">生成报告或导出数据后将自动记录</p>
             </div>
           ) : (
-            reportVersions.map((version: ReportVersion) => (
-              <div key={version.id} className="p-4 hover:bg-white/5 transition-colors">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                      version.format === 'pdf' ? 'bg-coral-500/20 text-coral-400' : 
-                      version.format === 'csv' ? 'bg-seaweed-500/20 text-seaweed-400' : 
-                      'bg-ocean-500/20 text-ocean-400'
-                    }`}>
-                      {version.format === 'pdf' ? <FileText size={16} /> : 
-                       version.format === 'csv' ? <FileSpreadsheet size={16} /> : <FileSpreadsheet size={16} />}
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-white">
-                        {version.format.toUpperCase()} 报告
-                      </div>
-                      <div className="text-xs text-white/50">
-                        由 {version.generatedByName} · {new Date(version.generatedAt).toLocaleString('zh-CN')}
-                      </div>
-                    </div>
+            Object.entries(groupedVersions).map(([filterKey, versions]) => (
+              <div key={filterKey} className="border-b border-white/5 last:border-b-0">
+                <div className="px-4 py-2 bg-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs text-white/60">
+                    <Layers size={12} />
+                    <span>
+                      海盆: {versions[0].filters.basin === 'all' ? '全部' : versions[0].filters.basin} | 
+                      季节: {versions[0].filters.season === 'all' ? '全部' : versions[0].filters.season} | 
+                      情景: {versions[0].filters.scenario === 'all' ? '全部' : versions[0].filters.scenario}
+                      {versions[0].filters.year && ` | 年份: ${versions[0].filters.year}`}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <div className="text-xs font-mono text-ocean-400">
-                        {(version.fileSize / 1024 / 1024).toFixed(2)} MB
-                      </div>
-                      <div className="text-xs text-white/40">
-                        {version.summary.recordCount} 条记录
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setSelectedVersion(version);
-                        setShowDetailModal(true);
-                      }}
-                      className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white"
-                      title="查看详情"
-                    >
-                      <Eye size={16} />
-                    </button>
-                  </div>
+                  <span className="text-xs text-white/40">{versions.length} 个版本</span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                  <div className="p-2 rounded-lg bg-white/5">
-                    <div className="text-[10px] text-white/40 mb-0.5">海盆
-                        </div>
-                    <div className="text-xs text-white/70">
-                      {version.filters.basin === 'all' ? '全部' : version.filters.basin}
+                {versions.map((version: ReportVersion) => (
+                  <div key={version.id} className="p-4 hover:bg-white/5 transition-colors relative">
+                    <div className="absolute left-4 top-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleVersionForComparison(version.id);
+                        }}
+                        className="p-1 hover:bg-white/10 rounded transition-colors"
+                      >
+                        {selectedForComparison.includes(version.id) ? (
+                          <CheckSquare size={16} className="text-ocean-400" />
+                        ) : (
+                          <Square size={16} className="text-white/30" />
+                        )}
+                      </button>
                     </div>
-                  </div>
-                  <div className="p-2 rounded-lg bg-white/5">
-                    <div className="text-[10px] text-white/40 mb-0.5">季节
+                    <div className="flex items-start justify-between mb-2 pl-10">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          version.format === 'pdf' ? 'bg-coral-500/20 text-coral-400' : 
+                          version.format === 'csv' ? 'bg-seaweed-500/20 text-seaweed-400' : 
+                          'bg-ocean-500/20 text-ocean-400'
+                        }`}>
+                          {version.format === 'pdf' ? <FileText size={16} /> : 
+                           version.format === 'csv' ? <FileSpreadsheet size={16} /> : <FileSpreadsheet size={16} />}
                         </div>
-                    <div className="text-xs text-white/70">
-                      {version.filters.season === 'all' ? '全部' : version.filters.season}
-                    </div>
-                  </div>
-                  <div className="p-2 rounded-lg bg-white/5">
-                    <div className="text-[10px] text-white/40 mb-0.5">情景
+                        <div>
+                          <div className="text-sm font-medium text-white">
+                            {version.format.toUpperCase()} 报告
+                            {!version.snapshot && (
+                              <span className="ml-2 px-1.5 py-0.5 bg-yellow-500/20 text-yellow-300 rounded text-[10px]">
+                                早期版本
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-white/50">
+                            由 {version.generatedByName} · {new Date(version.generatedAt).toLocaleString('zh-CN')}
+                          </div>
                         </div>
-                    <div className="text-xs text-white/70">
-                      {version.filters.scenario === 'all' ? '全部' : version.filters.scenario}
-                    </div>
-                  </div>
-                  <div className="p-2 rounded-lg bg-white/5">
-                    <div className="text-[10px] text-white/40 mb-0.5">总碳汇
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <div className="text-xs font-mono text-ocean-400">
+                            {(version.fileSize / 1024 / 1024).toFixed(2)} MB
+                          </div>
+                          <div className="text-xs text-white/40">
+                            {version.summary.recordCount} 条记录
+                          </div>
                         </div>
-                    <div className="text-xs text-ocean-400 font-mono">
-                      {version.summary.totalCarbonSink.toFixed(0)} Tg
+                        <button
+                          onClick={() => {
+                            setSelectedVersion(version);
+                            setShowDetailModal(true);
+                          }}
+                          className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white"
+                          title="查看详情"
+                        >
+                          <Eye size={16} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 text-[10px] text-white/40">
-                  <span>包含海盆：
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2 ml-10">
+                      <div className="p-2 rounded-lg bg-white/5">
+                        <div className="text-[10px] text-white/40 mb-0.5">海盆
+                            </div>
+                        <div className="text-xs text-white/70">
+                          {version.filters.basin === 'all' ? '全部' : version.filters.basin}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-white/5">
+                        <div className="text-[10px] text-white/40 mb-0.5">季节
+                            </div>
+                        <div className="text-xs text-white/70">
+                          {version.filters.season === 'all' ? '全部' : version.filters.season}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-white/5">
+                        <div className="text-[10px] text-white/40 mb-0.5">情景
+                            </div>
+                        <div className="text-xs text-white/70">
+                          {version.filters.scenario === 'all' ? '全部' : version.filters.scenario}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded-lg bg-white/5">
+                        <div className="text-[10px] text-white/40 mb-0.5">总碳汇
+                            </div>
+                        <div className="text-xs font-mono text-ocean-400">
+                          {version.summary.totalCarbonSink.toFixed(1)} Tg C
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 ml-10">
+                      {version.summary.basins.slice(0, 4).map((basin, idx) => (
+                        <span key={idx} className="px-2 py-0.5 bg-ocean-500/10 text-ocean-300 rounded text-[10px]">
+                          {basin}
                         </span>
-                  <span className="text-white/60">
-                    {version.summary.basins.join('、')}
-                  </span>
-                </div>
+                      ))}
+                      {version.summary.basins.length > 4 && (
+                        <span className="px-2 py-0.5 bg-white/5 text-white/40 rounded text-[10px]">
+                          +{version.summary.basins.length - 4} 更多
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             ))
           )}
@@ -1385,6 +1540,14 @@ export const Reports: React.FC = () => {
                 </div>
               )}
 
+              {!selectedVersion.snapshot?.chartsData && (
+                <div className="p-8 rounded-xl bg-white/5 border border-white/10 text-center">
+                  <Info size={32} className="mx-auto mb-3 text-yellow-400 opacity-50" />
+                  <p className="text-white/60">此为早期版本报告，暂无图表快照数据</p>
+                  <p className="text-xs text-white/40 mt-1">早期报告版本仅保留了核心指标摘要，未保存完整图表快照</p>
+                </div>
+              )}
+
               {selectedVersion.snapshot?.dataPreview && (
                 <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                   <div className="flex items-center gap-2 mb-4">
@@ -1430,6 +1593,13 @@ export const Reports: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {!selectedVersion.snapshot?.dataPreview && selectedVersion.snapshot?.chartsData && (
+                <div className="p-6 rounded-xl bg-white/5 border border-white/10 text-center">
+                  <Table size={24} className="mx-auto mb-2 text-white/30" />
+                  <p className="text-white/40 text-sm">此版本未保存数据预览快照</p>
+                </div>
+              )}
             </div>
 
             <div className="card-footer flex-shrink-0 border-t border-white/10">
@@ -1443,6 +1613,276 @@ export const Reports: React.FC = () => {
                 >
                   关闭
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showComparisonModal && comparisonVersions && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+          <div className="card w-full max-w-7xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="card-header flex-shrink-0 bg-gradient-to-r from-purple-900/30 to-ocean-900/30 border-b border-purple-500/20">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
+                    <GitCompare size={20} className="text-purple-400" />
+                  </div>
+                  <div>
+                    <div className="font-medium text-white flex items-center gap-2">
+                      报告版本对比
+                      <span className="px-2 py-0.5 bg-ocean-500/20 text-ocean-300 rounded text-xs">
+                        筛选条件一致
+                      </span>
+                    </div>
+                    <div className="text-xs text-white/50 mt-0.5">
+                      同一组筛选条件下两个版本的差异对比
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={closeComparison}
+                  className="p-2 hover:bg-white/10 rounded-lg transition-colors text-white/50 hover:text-white"
+                >
+                  <XCircle size={20} />
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                {comparisonVersions.map((version, idx) => (
+                  <div key={version.id} className={`p-4 rounded-xl border ${idx === 0 ? 'bg-ocean-900/20 border-ocean-500/30' : 'bg-purple-900/20 border-purple-500/30'}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-xs ${idx === 0 ? 'bg-ocean-500/20 text-ocean-300' : 'bg-purple-500/20 text-purple-300'}`}>
+                          {idx === 0 ? '旧版本' : '新版本'}
+                        </span>
+                        <span className="text-white/80 text-sm font-mono">#{version.id.slice(-6)}</span>
+                      </div>
+                      <div className={`w-2 h-2 rounded-full ${idx === 0 ? 'bg-ocean-400' : 'bg-purple-400'}`} />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/50">生成时间</span>
+                        <span className="text-white/80 font-mono">{new Date(version.generatedAt).toLocaleString('zh-CN')}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/50">导出人</span>
+                        <span className="text-white/80">{version.generatedByName}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-white/50">文件大小</span>
+                        <span className="text-white/80 font-mono">{(version.fileSize / 1024 / 1024).toFixed(2)} MB</span>
+                      </div>
+                      {!version.snapshot && (
+                        <div className="mt-2 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded">
+                          <span className="text-yellow-300 text-[10px] flex items-center gap-1">
+                            <AlertCircle size={10} />
+                            早期版本，无快照数据
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                <div className="flex items-center gap-2 mb-4">
+                  <BarChart2 size={16} className="text-ocean-400" />
+                  <span className="text-sm font-medium text-white/80">核心指标对比</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-white/60 border-b border-white/10">
+                        <th className="p-3 font-medium bg-white/5">指标</th>
+                        <th className="p-3 font-medium bg-ocean-900/20 text-ocean-300">旧版本</th>
+                        <th className="p-3 font-medium bg-purple-900/20 text-purple-300">新版本</th>
+                        <th className="p-3 font-medium bg-white/5">差异</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-white/5">
+                        <td className="p-3 text-white/60">生成时间</td>
+                        <td className="p-3 font-mono text-ocean-300">{new Date(comparisonVersions[0].generatedAt).toLocaleString('zh-CN')}</td>
+                        <td className="p-3 font-mono text-purple-300">{new Date(comparisonVersions[1].generatedAt).toLocaleString('zh-CN')}</td>
+                        <td className="p-3">{getDiffBadge(comparisonVersions[0].generatedAt, comparisonVersions[1].generatedAt)}</td>
+                      </tr>
+                      <tr className="border-b border-white/5">
+                        <td className="p-3 text-white/60">导出人</td>
+                        <td className="p-3 text-ocean-300">{comparisonVersions[0].generatedByName}</td>
+                        <td className="p-3 text-purple-300">{comparisonVersions[1].generatedByName}</td>
+                        <td className="p-3">{getDiffBadge(comparisonVersions[0].generatedByName, comparisonVersions[1].generatedByName)}</td>
+                      </tr>
+                      <tr className="border-b border-white/5">
+                        <td className="p-3 text-white/60">数据记录数</td>
+                        <td className="p-3 font-mono text-ocean-300">{comparisonVersions[0].summary.recordCount}</td>
+                        <td className="p-3 font-mono text-purple-300">{comparisonVersions[1].summary.recordCount}</td>
+                        <td className="p-3">{getDiffBadge(comparisonVersions[0].summary.recordCount, comparisonVersions[1].summary.recordCount)}</td>
+                      </tr>
+                      <tr className="border-b border-white/5">
+                        <td className="p-3 text-white/60">总碳汇 (Tg C)</td>
+                        <td className="p-3 font-mono text-ocean-300">{comparisonVersions[0].summary.totalCarbonSink.toFixed(2)}</td>
+                        <td className="p-3 font-mono text-purple-300">{comparisonVersions[1].summary.totalCarbonSink.toFixed(2)}</td>
+                        <td className="p-3">{getDiffBadge(comparisonVersions[0].summary.totalCarbonSink, comparisonVersions[1].summary.totalCarbonSink)}</td>
+                      </tr>
+                      <tr className="border-b border-white/5">
+                        <td className="p-3 text-white/60">平均碳汇 (Tg C)</td>
+                        <td className="p-3 font-mono text-ocean-300">{comparisonVersions[0].summary.avgCarbonSink.toFixed(2)}</td>
+                        <td className="p-3 font-mono text-purple-300">{comparisonVersions[1].summary.avgCarbonSink.toFixed(2)}</td>
+                        <td className="p-3">{getDiffBadge(comparisonVersions[0].summary.avgCarbonSink, comparisonVersions[1].summary.avgCarbonSink)}</td>
+                      </tr>
+                      <tr>
+                        <td className="p-3 text-white/60">包含海盆</td>
+                        <td className="p-3 text-ocean-300">{comparisonVersions[0].summary.basins.length} 个</td>
+                        <td className="p-3 text-purple-300">{comparisonVersions[1].summary.basins.length} 个</td>
+                        <td className="p-3">{getDiffBadge(comparisonVersions[0].summary.basins.length, comparisonVersions[1].summary.basins.length)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Filter size={16} className="text-yellow-400" />
+                    <span className="text-sm font-medium text-white/80">筛选条件</span>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    {[
+                      { key: 'basin', label: '海盆' },
+                      { key: 'season', label: '季节' },
+                      { key: 'scenario', label: '排放情景' },
+                      { key: 'year', label: '年份' }
+                    ].map(({ key, label }) => {
+                      const filters0 = comparisonVersions[0].filters as any;
+                      const filters1 = comparisonVersions[1].filters as any;
+                      const oldVal = filters0[key];
+                      const newVal = filters1[key];
+                      const displayOld = oldVal === 'all' ? '全部' : oldVal || '全部';
+                      const displayNew = newVal === 'all' ? '全部' : newVal || '全部';
+                      return (
+                        <div key={key} className="flex items-center justify-between p-2 rounded-lg bg-white/5">
+                          <span className="text-white/50">{label}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-ocean-300 font-mono">{displayOld}</span>
+                            <ArrowDownUp size={12} className="text-white/30" />
+                            <span className="text-purple-300 font-mono">{displayNew}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-3">
+                    <BarChart3 size={16} className="text-seaweed-400" />
+                    <span className="text-sm font-medium text-white/80">图表摘要差异</span>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    {getSnapshotDisplay(comparisonVersions[0].snapshot).hasData && getSnapshotDisplay(comparisonVersions[1].snapshot).hasData ? (
+                      <>
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-white/5">
+                          <span className="text-white/50">碳通量数据</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-ocean-300">{getSnapshotDisplay(comparisonVersions[0].snapshot).carbonFlux.length} 项</span>
+                            <ArrowDownUp size={12} className="text-white/30" />
+                            <span className="text-purple-300">{getSnapshotDisplay(comparisonVersions[1].snapshot).carbonFlux.length} 项</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-white/5">
+                          <span className="text-white/50">情景对比数据</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-ocean-300">{getSnapshotDisplay(comparisonVersions[0].snapshot).scenarioComparison.length} 项</span>
+                            <ArrowDownUp size={12} className="text-white/30" />
+                            <span className="text-purple-300">{getSnapshotDisplay(comparisonVersions[1].snapshot).scenarioComparison.length} 项</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between p-2 rounded-lg bg-white/5">
+                          <span className="text-white/50">碳泵效率数据</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-ocean-300">{getSnapshotDisplay(comparisonVersions[0].snapshot).pumpEfficiency ? '有' : '无'}</span>
+                            <ArrowDownUp size={12} className="text-white/30" />
+                            <span className="text-purple-300">{getSnapshotDisplay(comparisonVersions[1].snapshot).pumpEfficiency ? '有' : '无'}</span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-center">
+                        <AlertCircle size={16} className="mx-auto mb-1 text-yellow-400" />
+                        <p className="text-yellow-300 text-[10px]">一个或多个版本无快照数据，无法对比图表摘要</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {getSnapshotDisplay(comparisonVersions[0].snapshot).hasData && getSnapshotDisplay(comparisonVersions[1].snapshot).hasData && (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Table size={16} className="text-coral-400" />
+                    <span className="text-sm font-medium text-white/80">数据预览差异（前5条记录）</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[11px]">
+                      <thead>
+                        <tr className="text-left text-white/60 border-b border-white/10 bg-white/5">
+                          <th className="p-2 font-medium">版本</th>
+                          <th className="p-2 font-medium">海盆</th>
+                          <th className="p-2 font-medium">季节</th>
+                          <th className="p-2 font-medium">情景</th>
+                          <th className="p-2 font-medium">年份</th>
+                          <th className="p-2 font-medium text-right">总碳汇</th>
+                          <th className="p-2 font-medium text-right">生物泵</th>
+                          <th className="p-2 font-medium text-right">物理泵</th>
+                          <th className="p-2 font-medium text-right">碳酸盐泵</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[0, 1].map(versionIdx => {
+                          const snapshot = getSnapshotDisplay(comparisonVersions[versionIdx].snapshot);
+                          return snapshot.dataPreview.slice(0, 5).map((d, i) => (
+                            <tr key={`${versionIdx}-${i}`} className={`border-b border-white/5 ${versionIdx === 0 ? 'bg-ocean-900/10' : 'bg-purple-900/10'}`}>
+                              <td className="p-2">
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] ${versionIdx === 0 ? 'bg-ocean-500/20 text-ocean-300' : 'bg-purple-500/20 text-purple-300'}`}>
+                                  {versionIdx === 0 ? '旧' : '新'}
+                                </span>
+                              </td>
+                              <td className="p-2 text-white/80">{d.basin}</td>
+                              <td className="p-2">{d.season}</td>
+                              <td className="p-2">{d.scenario}</td>
+                              <td className="p-2 text-white/60 font-mono">{d.year}</td>
+                              <td className="p-2 text-right text-ocean-400 font-mono">{d.totalCarbonSink?.toFixed(1) || '-'}</td>
+                              <td className="p-2 text-right text-seaweed-400 font-mono">{d.biologicalPump?.toFixed(3) || '-'}</td>
+                              <td className="p-2 text-right text-coral-400 font-mono">{d.physicalPump?.toFixed(3) || '-'}</td>
+                              <td className="p-2 text-right text-yellow-400 font-mono">{d.carbonatePump?.toFixed(3) || '-'}</td>
+                            </tr>
+                          ));
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="card-footer flex-shrink-0 border-t border-white/10">
+              <div className="flex justify-between items-center">
+                <div className="text-xs text-white/40">
+                  提示：只有相同筛选条件的版本才能进行对比
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={closeComparison}
+                    className="btn-secondary"
+                  >
+                    关闭
+                  </button>
+                </div>
               </div>
             </div>
           </div>

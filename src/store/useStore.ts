@@ -22,7 +22,8 @@ import {
   RetestSimulation,
   BasinWorkOrder,
   WorkOrderEvent,
-  WorkOrderRemark
+  WorkOrderRemark,
+  HandlerReassignment
 } from '../../shared/types';
 import { generateMockSimulations, generateMockAlerts, generateMockMetrics, generateMockApprovals, generateMockRecommendations, generateMockCarbonSinkData, generateMockPerformanceStats, generateMockBasinStatus, generateMockReportVersions, mockUser, getUserByEmail, generateMockWorkOrders, generateMockRecoveryAssessments } from '../utils/mockData';
 
@@ -67,9 +68,11 @@ interface AppState {
   addReportVersion: (version: Omit<ReportVersion, 'id' | 'generatedAt' | 'generatedBy' | 'generatedByName'>) => void;
   addRetestSimulation: (basin: string, calibrationData: { name: string; size: number }) => void;
   addWorkOrderEvent: (basin: string, event: Omit<WorkOrderEvent, 'id' | 'timestamp'>) => void;
-  addWorkOrderRemark: (basin: string, content: string) => void;
+  addWorkOrderRemark: (basin: string, content: string, phase?: WorkOrderEvent['phase']) => void;
   updateNextPlan: (basin: string, nextPlan: string) => void;
   updateWorkOrderStep: (basin: string, stepId: string, completed: boolean) => void;
+  reassignHandler: (basin: string, toHandlerId: string, toHandlerName: string, reason: string) => void;
+  checkOverdueWorkOrders: () => void;
   setNotification: (notification: { type: 'success' | 'error' | 'info' | 'warning'; message: string } | null) => void;
   loadData: () => void;
 }
@@ -489,7 +492,8 @@ export const useStore = create<AppState>((set, get) => ({
       title: '校准数据已上传',
       description: `上传文件：${calibrationData.name}（${(calibrationData.size / 1024 / 1024).toFixed(1)} MB）`,
       handledBy: user?.id,
-      handledByName: user?.name
+      handledByName: user?.name,
+      phase: 'calibration'
     });
     get().updateWorkOrderStep(basin, 'step_calibration', true);
     get().updateWorkOrderStep(basin, 'step_retest', false);
@@ -507,7 +511,27 @@ export const useStore = create<AppState>((set, get) => ({
           } : a
         )
       }));
+
+      get().addWorkOrderEvent(basin, {
+        type: 'retest_started',
+        title: '复测模拟已启动',
+        description: `复测模拟任务已启动，预计需要3-5分钟完成`,
+        handledBy: 'system',
+        handledByName: '系统自动',
+        phase: 'retest'
+      });
     }, 1000);
+
+    setTimeout(() => {
+      get().addWorkOrderEvent(basin, {
+        type: 'retest_running',
+        title: '复测模拟运行中',
+        description: '正在执行模型计算，处理海洋生物地球化学循环数据...',
+        handledBy: 'system',
+        handledByName: '系统自动',
+        phase: 'retest'
+      });
+    }, 2000);
 
     setTimeout(() => {
       const deviation = (Math.random() - 0.5) * 40;
@@ -515,7 +539,7 @@ export const useStore = create<AppState>((set, get) => ({
       const result = Math.abs(postRetestDeviation) <= 20 ? 'pass' : 'fail';
       const recommendation = result === 'pass' 
         ? '复测通过，NPP偏差在允许范围内。建议继续进行下一次复测。'
-        : '复测失败，NPP偏差仍超过阈值。建议检查浮游植物功能群参数或沉降速率设置。';
+        : '复测未通过，NPP偏差仍超过阈值。建议检查浮游植物功能群参数或沉降速率设置。';
 
       const lastPreLockDeviation = preLockDeviations[preLockDeviations.length - 1];
       const improvementPercent = lastPreLockDeviation !== undefined && postRetestDeviation !== null
@@ -584,7 +608,8 @@ export const useStore = create<AppState>((set, get) => ({
             title: '海盆已自动解锁',
             description: '连续两次复测通过，系统自动解除海盆锁定',
             handledBy: 'system',
-            handledByName: '系统自动'
+            handledByName: '系统自动',
+            phase: 'unlock'
           });
         }
 
@@ -592,11 +617,12 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       get().addWorkOrderEvent(basin, {
-        type: 'retest_completed',
-        title: '复测模拟完成',
-        description: `NPP偏差：${Math.abs(postRetestDeviation).toFixed(1)}%，${result === 'pass' ? '通过' : '未通过'}`,
+        type: result === 'pass' ? 'retest_completed' : 'retest_failed',
+        title: `复测模拟${result === 'pass' ? '通过' : '未通过'}`,
+        description: `NPP偏差：${Math.abs(postRetestDeviation).toFixed(1)}%，${result === 'pass' ? '通过' : '未通过'}阈值`,
         handledBy: user?.id,
         handledByName: user?.name,
+        phase: 'retest',
         metadata: {
           deviation: postRetestDeviation,
           result,
@@ -605,6 +631,7 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       if (result === 'pass') {
+        get().updateWorkOrderStep(basin, 'step_retest', true);
         get().setNotification({ 
           type: 'success', 
           message: `复测通过！NPP偏差${Math.abs(postRetestDeviation).toFixed(1)}%，改善幅度${improvementPercent ? improvementPercent + '%' : '计算中'}。` 
@@ -638,14 +665,15 @@ export const useStore = create<AppState>((set, get) => ({
     }));
   },
 
-  addWorkOrderRemark: (basin: string, content: string) => {
+  addWorkOrderRemark: (basin: string, content: string, phase?: WorkOrderEvent['phase']) => {
     const user = get().user;
     const newRemark: WorkOrderRemark = {
       id: `remark-${Date.now()}`,
       content,
       createdAt: new Date().toISOString(),
       createdBy: user?.id || 'unknown',
-      createdByName: user?.name || '未知用户'
+      createdByName: user?.name || '未知用户',
+      phase
     };
 
     set(state => ({
@@ -662,7 +690,8 @@ export const useStore = create<AppState>((set, get) => ({
       title: '处理人补充备注',
       description: content.length > 50 ? content.substring(0, 50) + '...' : content,
       handledBy: user?.id,
-      handledByName: user?.name
+      handledByName: user?.name,
+      phase
     });
 
     get().setNotification({ type: 'success', message: '备注已添加' });
@@ -713,5 +742,86 @@ export const useStore = create<AppState>((set, get) => ({
         } : wo
       )
     }));
+  },
+
+  reassignHandler: (basin: string, toHandlerId: string, toHandlerName: string, reason: string) => {
+    const user = get().user;
+    const workOrder = get().workOrders.find(wo => wo.basin === basin);
+    const fromHandler = workOrder?.currentHandler;
+    const fromHandlerName = workOrder?.currentHandlerName;
+
+    if (!fromHandler || !fromHandlerName) {
+      get().setNotification({ type: 'error', message: '当前处理人不存在，无法改派' });
+      return;
+    }
+
+    const reassignment: HandlerReassignment = {
+      id: `reassign-${Date.now()}`,
+      fromHandler,
+      fromHandlerName,
+      toHandler: toHandlerId,
+      toHandlerName,
+      reason,
+      reassignedAt: new Date().toISOString(),
+      reassignedBy: user?.id || 'unknown',
+      reassignedByName: user?.name || '未知用户'
+    };
+
+    set(state => ({
+      workOrders: state.workOrders.map(wo =>
+        wo.basin === basin ? {
+          ...wo,
+          currentHandler: toHandlerId,
+          currentHandlerName: toHandlerName,
+          reassignmentHistory: [...wo.reassignmentHistory, reassignment],
+          steps: wo.steps.map((s, i) =>
+            i === wo.currentStep ? { ...s, handler: toHandlerId, handlerName: toHandlerName } : s
+          )
+        } : wo
+      )
+    }));
+
+    get().addWorkOrderEvent(basin, {
+      type: 'handler_reassigned',
+      title: '处理人已改派',
+      description: `处理人从 ${fromHandlerName} 改派为 ${toHandlerName}，原因：${reason}`,
+      handledBy: user?.id,
+      handledByName: user?.name,
+      metadata: { fromHandler, toHandler: toHandlerId, reason }
+    });
+
+    get().setNotification({ type: 'success', message: `处理人已改派为 ${toHandlerName}` });
+  },
+
+  checkOverdueWorkOrders: () => {
+    const now = new Date();
+    let hasOverdue = false;
+
+    set(state => ({
+      workOrders: state.workOrders.map(wo => {
+        if (wo.status !== 'in_progress') return wo;
+
+        const currentStep = wo.steps[wo.currentStep];
+        if (!currentStep || currentStep.completed || !currentStep.deadline) {
+          return { ...wo, overdue: false };
+        }
+
+        const deadline = new Date(currentStep.deadline);
+        const isOverdue = now > deadline;
+
+        if (isOverdue && !wo.overdue) {
+          hasOverdue = true;
+        }
+
+        return { ...wo, overdue: isOverdue };
+      })
+    }));
+
+    if (hasOverdue) {
+      get().setNotification({ 
+        type: 'warning', 
+        message: '检测到有工单步骤已超时，请及时处理' 
+      });
+    }
   },
 }));
